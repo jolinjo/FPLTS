@@ -27,7 +27,8 @@ class ConfigLoader:
             "model.ini",
             "flow.ini",
             "container.ini",
-            "status.ini"
+            "status.ini",
+            "qrcode.ini"
         ]
         
         for config_file in config_files:

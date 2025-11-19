@@ -11,7 +11,8 @@ const AppState = {
     apiBaseUrl: '', // 使用相對路徑，自動適配
     seriesOptions: [], // 產品線選項
     modelOptions: [],  // 機種選項
-    containerOptions: [] // 容器選項
+    containerOptions: [], // 容器選項
+    processOptions: [] // 製程站點選項
 };
 
 // 初始化
@@ -69,7 +70,26 @@ function showMainPage() {
     
     // 更新顯示資訊
     document.getElementById('operatorDisplay').textContent = AppState.operatorId;
-    document.getElementById('stationDisplay').textContent = AppState.currentStationId;
+    updateStationDisplay();
+}
+
+/**
+ * 更新站點顯示（包含中文名稱）
+ */
+function updateStationDisplay() {
+    const stationDisplay = document.getElementById('stationDisplay');
+    if (!stationDisplay || !AppState.currentStationId) {
+        return;
+    }
+    
+    // 查找對應的站點名稱
+    const process = AppState.processOptions.find(p => p.code === AppState.currentStationId);
+    if (process) {
+        stationDisplay.textContent = `${AppState.currentStationId} - ${process.name}`;
+    } else {
+        // 如果找不到，只顯示代號
+        stationDisplay.textContent = AppState.currentStationId;
+    }
 }
 
 /**
@@ -98,8 +118,57 @@ function checkUrlParams() {
 }
 
 /**
+ * 解析條碼，移除所有 - 後按照固定位置解析
+ * 條碼格式：工單8碼-製程2碼-SKU5碼-容器2碼-箱號2碼-貨態1碼-數量4碼-校驗3碼
+ * 移除 - 後總長度：8+2+5+2+2+1+4+3 = 27碼
+ */
+function parseBarcode(barcode) {
+    // 移除所有 - 符號
+    const cleanBarcode = barcode.replace(/-/g, '');
+    
+    // 按照固定位置解析
+    // 工單：0-7 (8碼)
+    // 製程：8-9 (2碼)
+    // SKU：10-14 (5碼)
+    // 容器：15-16 (2碼)
+    // 箱號：17-18 (2碼)
+    // 貨態：19 (1碼)
+    // 數量：20-23 (4碼)
+    // 校驗：24-26 (3碼)
+    
+    if (cleanBarcode.length < 27) {
+        // 如果長度不足，嘗試用 split 方式解析（有 - 的情況）
+        const parts = barcode.split('-');
+        if (parts.length >= 2) {
+            return {
+                order: parts[0] || '',
+                process: parts[1] || '',
+                sku: parts[2] || '',
+                container: parts[3] || '',
+                boxSeq: parts[4] || '',
+                status: parts[5] || '',
+                qty: parts[6] || '',
+                crc: parts[7] || ''
+            };
+        }
+        return null;
+    }
+    
+    return {
+        order: cleanBarcode.substring(0, 8),
+        process: cleanBarcode.substring(8, 10),
+        sku: cleanBarcode.substring(10, 15),
+        container: cleanBarcode.substring(15, 17),
+        boxSeq: cleanBarcode.substring(17, 19),
+        status: cleanBarcode.substring(19, 20),
+        qty: cleanBarcode.substring(20, 24),
+        crc: cleanBarcode.substring(24, 27)
+    };
+}
+
+/**
  * 處理待處理的條碼（從 sessionStorage 或 URL 參數）
- * 預設開啟遷入功能
+ * 預設開啟遷入功能，但如果製程是 ZZ 則開啟首站遷出
  */
 function processPendingBarcode() {
     const pendingBarcode = sessionStorage.getItem('pendingBarcode');
@@ -108,20 +177,51 @@ function processPendingBarcode() {
         // 清除待處理的條碼
         sessionStorage.removeItem('pendingBarcode');
         
+        // 解析條碼（移除所有 - 後解析）
+        const parsed = parseBarcode(pendingBarcode);
+        const processCode = parsed ? parsed.process.trim().toUpperCase() : '';
+        const isNewOrder = processCode === 'ZZ';
+        
+        // 調試用（可在開發時查看）
+        console.log('條碼解析:', {
+            originalBarcode: pendingBarcode,
+            parsed: parsed,
+            processCode: processCode,
+            isNewOrder: isNewOrder
+        });
+        
         // 等待頁面完全載入後處理
         setTimeout(() => {
-            // 預設開啟遷入功能
-            openBottomSheet('inbound', '貨物遷入');
-            
-            // 自動填入條碼
-            setTimeout(() => {
-                const barcodeInput = document.getElementById('barcodeInput');
-                if (barcodeInput) {
-                    barcodeInput.value = pendingBarcode;
-                    // 自動聚焦到輸入框
-                    barcodeInput.focus();
+            if (isNewOrder) {
+                // 如果是 ZZ 製程（新工單），開啟首站遷出
+                openBottomSheet('first', '首站遷出');
+                
+                // 如果有工單號，自動填入
+                if (parsed && parsed.order) {
+                    setTimeout(() => {
+                        const orderInput = document.getElementById('orderInput');
+                        if (orderInput) {
+                            // 移除可能的補零，但保留至少一個字符
+                            let orderValue = parsed.order.replace(/^0+/, '');
+                            orderInput.value = orderValue || parsed.order;
+                            orderInput.focus();
+                        }
+                    }, 350);
                 }
-            }, 350);
+            } else {
+                // 預設開啟遷入功能
+                openBottomSheet('inbound', '貨物遷入');
+                
+                // 自動填入條碼
+                setTimeout(() => {
+                    const barcodeInput = document.getElementById('barcodeInput');
+                    if (barcodeInput) {
+                        barcodeInput.value = pendingBarcode;
+                        // 自動聚焦到輸入框
+                        barcodeInput.focus();
+                    }
+                }, 350);
+            }
         }, 500);
     }
 }
@@ -160,6 +260,9 @@ function setupEventListeners() {
     
     // 警示視窗
     document.getElementById('alertOkBtn').addEventListener('click', closeAlert);
+    
+    // QR Code 下載按鈕
+    document.getElementById('downloadQrcodeBtn').addEventListener('click', downloadQRCode);
     
     // 條碼輸入框 Enter 鍵
     document.getElementById('barcodeInput').addEventListener('keypress', (e) => {
@@ -205,15 +308,17 @@ function saveSetup() {
     // 顯示主功能頁
     showMainPage();
     
-    // 顯示成功訊息
-    showSuccess('設定已儲存', `操作員：${operatorId}，站點：${currentStationId}`);
+    // 顯示成功訊息（包含站點中文名稱）
+    const process = AppState.processOptions.find(p => p.code === currentStationId);
+    const stationDisplay = process ? `${currentStationId} - ${process.name}` : currentStationId;
+    showSuccess('設定已儲存', `操作員：${operatorId}，站點：${stationDisplay}`);
     
     // 檢查是否有待處理的條碼（從 QR code 掃描）
     processPendingBarcode();
 }
 
 /**
- * 載入設定選項（產品線、機種和容器）
+ * 載入設定選項（產品線、機種、容器和製程站點）
  */
 async function loadConfigOptions() {
     try {
@@ -239,6 +344,18 @@ async function loadConfigOptions() {
         if (containerData.success) {
             AppState.containerOptions = containerData.data;
             updateContainerSelects();
+        }
+        
+        // 載入製程站點選項
+        const processResponse = await fetch('/api/config/processes');
+        const processData = await processResponse.json();
+        if (processData.success) {
+            AppState.processOptions = processData.data;
+            updateProcessSelect();
+            // 更新主頁面顯示（如果已經登入）
+            if (AppState.currentStationId) {
+                updateStationDisplay();
+            }
         }
     } catch (error) {
         console.error('載入設定選項失敗：', error);
@@ -305,6 +422,33 @@ function updateContainerSelects() {
             option.textContent = `${container.code} - 容量 ${container.capacity}`;
             firstSelect.appendChild(option);
         });
+    }
+}
+
+/**
+ * 更新製程站點下拉選單
+ */
+function updateProcessSelect() {
+    const select = document.getElementById('stationSelect');
+    if (!select) {
+        return;
+    }
+    
+    // 保留第一個選項（請選擇站點）
+    select.innerHTML = '<option value="">請選擇站點</option>';
+    
+    // 添加所有站點選項
+    AppState.processOptions.forEach(process => {
+        const option = document.createElement('option');
+        option.value = process.code;
+        option.textContent = `${process.code} - ${process.name}`;
+        select.appendChild(option);
+    });
+    
+    // 如果有已保存的站點，恢復選擇
+    const savedStation = localStorage.getItem('currentStationId');
+    if (savedStation) {
+        select.value = savedStation;
     }
 }
 
@@ -379,6 +523,29 @@ async function handleInbound() {
     
     if (!barcode) {
         showAlert('錯誤', '請輸入或掃描條碼', 'error');
+        return;
+    }
+    
+    // 檢查是否為 ZZ 製程（新工單），如果是則自動切換到首站遷出
+    // 移除所有 - 後解析條碼
+    const parsed = parseBarcode(barcode);
+    const processCode = parsed ? parsed.process.trim().toUpperCase() : '';
+    if (processCode === 'ZZ') {
+        // 關閉遷入工作表
+        closeBottomSheet();
+        // 開啟首站遷出
+        openBottomSheet('first', '首站遷出');
+        // 如果有工單號，自動填入
+        if (parsed && parsed.order) {
+            setTimeout(() => {
+                const orderInput = document.getElementById('orderInput');
+                if (orderInput) {
+                    let orderValue = parsed.order.replace(/^0+/, '');
+                    orderInput.value = orderValue || parsed.order;
+                    orderInput.focus();
+                }
+            }, 350);
+        }
         return;
     }
     
@@ -472,6 +639,12 @@ async function handleOutbound() {
             detail += `\n下一站建議：${data.data.next_station}`;
         }
         showSuccess('遷出成功', detail);
+        
+        // 顯示 QR Code（如果有）
+        if (data.data.qr_code_svg) {
+            showQRCode(data.data.qr_code_svg, data.data.new_barcode);
+        }
+        
         playSound('success');
         
     } catch (error) {
@@ -580,6 +753,12 @@ async function handleFirst() {
             detail += `\n下一站建議：${data.data.next_station}`;
         }
         showSuccess('首站遷出成功', detail);
+        
+        // 顯示 QR Code（如果有）
+        if (data.data.qr_code_svg) {
+            showQRCode(data.data.qr_code_svg, data.data.barcode);
+        }
+        
         playSound('success');
         
     } catch (error) {
@@ -604,6 +783,68 @@ function showSuccess(message, detail) {
     setTimeout(() => {
         card.classList.add('hidden');
     }, 3000);
+}
+
+/**
+ * 顯示 QR Code
+ */
+function showQRCode(svgString, barcode) {
+    const qrcodeCard = document.getElementById('qrcodeCard');
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
+    
+    // 清空容器
+    qrcodeContainer.innerHTML = '';
+    
+    // 插入 SVG
+    qrcodeContainer.innerHTML = svgString;
+    
+    // 儲存條碼供下載使用
+    qrcodeContainer.dataset.barcode = barcode;
+    qrcodeContainer.dataset.svg = svgString;
+    
+    // 顯示 QR Code 卡片
+    qrcodeCard.classList.remove('hidden');
+    
+    // 滾動到 QR Code 卡片
+    setTimeout(() => {
+        qrcodeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+}
+
+/**
+ * 下載 QR Code SVG
+ */
+function downloadQRCode() {
+    const qrcodeContainer = document.getElementById('qrcodeCard');
+    const container = document.getElementById('qrcodeContainer');
+    
+    if (!container || !container.dataset.svg || !container.dataset.barcode) {
+        showAlert('錯誤', '沒有可下載的 QR Code', 'error');
+        return;
+    }
+    
+    const svgString = container.dataset.svg;
+    const barcode = container.dataset.barcode;
+    
+    // 創建 Blob
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    
+    // 創建下載連結
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `QRCode_${barcode.replace(/[^A-Z0-9]/g, '_')}.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // 釋放 URL
+    setTimeout(() => {
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    // 顯示成功訊息
+    showSuccess('下載成功', `QR Code 已下載：${link.download}`);
 }
 
 /**

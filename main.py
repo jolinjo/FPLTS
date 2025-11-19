@@ -3,7 +3,7 @@ FastAPI 應用程式入口
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -14,10 +14,11 @@ from services.barcode import BarcodeParser, BarcodeGenerator, CRC16
 from services.flow_validator import validate_process_flow, get_next_station
 from services.sheet import sheet_service
 from services.config_loader import config_loader
+from services.qrcode_generator import QRCodeGenerator
 
 load_dotenv()
 
-app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.1")
+app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.3")
 
 # 掛載靜態檔案目錄
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -75,6 +76,16 @@ async def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "工廠製程物流追溯與分析系統 API"}
+
+
+@app.get("/b={barcode:path}")
+async def redirect_barcode_path(barcode: str):
+    """
+    處理 /b=條碼 格式的 URL，重定向到正確的查詢參數格式
+    這樣可以支援 QR code 中沒有 ? 的情況
+    """
+    # 重定向到正確的查詢參數格式
+    return RedirectResponse(url=f"/?b={barcode}", status_code=302)
 
 
 @app.get("/api/config/series")
@@ -137,6 +148,27 @@ async def get_container_options():
     return {
         "success": True,
         "data": container_list
+    }
+
+
+@app.get("/api/config/processes")
+async def get_process_options():
+    """
+    取得製程站點選項列表
+    
+    返回所有可用的製程站點（Process）選項
+    """
+    process_dict = config_loader.get_section_dict("process", "Process")
+    
+    # 轉換為列表格式，包含代號和名稱
+    process_list = [
+        {"code": code, "name": name}
+        for code, name in process_dict.items()
+    ]
+    
+    return {
+        "success": True,
+        "data": process_list
     }
 
 
@@ -272,6 +304,9 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     series = BarcodeParser.get_series_from_sku(parsed['sku'])
     next_station = get_next_station(series, request.current_station_id)
     
+    # 生成 QR Code SVG
+    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode)
+    
     # 立即回傳成功回應
     return {
         "success": True,
@@ -280,7 +315,8 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
             "new_barcode": new_barcode,
             "order": parsed['order'].upper(),
             "current_station": request.current_station_id,
-            "next_station": next_station
+            "next_station": next_station,
+            "qr_code_svg": qr_svg
         }
     }
 
@@ -387,6 +423,9 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     # 取得下一站建議
     next_station = get_next_station(request.series_code, request.current_station_id)
     
+    # 生成 QR Code SVG
+    qr_svg = QRCodeGenerator.generate_simple_svg(barcode)
+    
     return {
         "success": True,
         "message": "首站遷出成功",
@@ -395,7 +434,8 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
             "order": order_upper,
             "sku": sku,
             "current_station": request.current_station_id,
-            "next_station": next_station
+            "next_station": next_station,
+            "qr_code_svg": qr_svg
         }
     }
 
