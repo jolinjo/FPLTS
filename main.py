@@ -18,7 +18,7 @@ from services.qrcode_generator import QRCodeGenerator
 
 load_dotenv()
 
-app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.3")
+app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.4")
 
 # 掛載靜態檔案目錄
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -197,6 +197,24 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     prev_station = parsed['process']
     curr_station = request.current_station_id
     
+    # 檢查該條碼是否已有 OUT 記錄
+    # 如果該條碼有遷出記錄，表示已經被遷出過（可能分為良品和不良品），
+    # 下游站點掃到上游製程的條碼時，應該直接使用遷出功能，不要再遷入
+    has_out_record = sheet_service.has_outbound_record(request.barcode)
+    
+    if has_out_record:
+        # 如果已有 OUT 記錄，返回特殊狀態，讓前端切換到遷出
+        return {
+            "success": False,
+            "should_switch_to_outbound": True,
+            "message": "該條碼已有遷出記錄，請使用遷出功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "sku": sku
+            }
+        }
+    
     # 取得產品系列（前2碼）
     series = BarcodeParser.get_series_from_sku(sku)
     
@@ -280,6 +298,17 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     # TODO: 從 Google Sheets 查詢上次遷入時間來計算實際工時
     cycle_time = 0
     
+    # 取得 domain 設定，並組合成完整的條碼 URL
+    domain = config_loader.get_value("settings", "Settings", "domain", "")
+    if domain:
+        # 移除 domain 末尾的斜線（如果有的話）
+        domain = domain.rstrip('/')
+        # 組合成完整 URL：domain/b=條碼
+        new_barcode_with_domain = f"{domain}/b={new_barcode}"
+    else:
+        # 如果沒有設定 domain，只使用條碼
+        new_barcode_with_domain = new_barcode
+    
     # 準備記錄資料（工單號轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
@@ -294,7 +323,7 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
         "status": request.status or parsed['status'],
         "cycle_time": cycle_time,
         "scanned_barcode": request.barcode,
-        "new_barcode": new_barcode
+        "new_barcode": new_barcode_with_domain
     }
     
     # 使用 BackgroundTasks 寫入 Google Sheets
@@ -304,15 +333,16 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     series = BarcodeParser.get_series_from_sku(parsed['sku'])
     next_station = get_next_station(series, request.current_station_id)
     
-    # 生成 QR Code SVG
-    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode)
+    # 生成 QR Code SVG（使用包含 domain 的完整 URL）
+    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
     
     # 立即回傳成功回應
     return {
         "success": True,
         "message": "遷出成功",
         "data": {
-            "new_barcode": new_barcode,
+            "new_barcode": new_barcode,  # 返回原始條碼（不含 domain）
+            "new_barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
             "order": parsed['order'].upper(),
             "current_station": request.current_station_id,
             "next_station": next_station,

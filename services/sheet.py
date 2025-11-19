@@ -160,6 +160,135 @@ class SheetService:
             print(f"寫入 Google Sheets 失敗：{e}")
             return False
     
+    def get_logs_by_barcode(self, barcode: str, limit: int = 100) -> list:
+        """
+        根據條碼查詢記錄（查詢 scanned_barcode 或 new_barcode 欄位）
+        
+        Args:
+            barcode: 條碼字串
+            limit: 最大返回筆數
+        
+        Returns:
+            記錄列表
+        """
+        if not self.client or not self.sheet_id:
+            return []
+        
+        try:
+            spreadsheet = self.client.open_by_key(self.sheet_id)
+            worksheet = spreadsheet.worksheet("Logs")
+            
+            # 檢查是否有標題列
+            try:
+                headers = worksheet.row_values(1)
+                if not headers or len(headers) == 0:
+                    # 沒有標題列，手動讀取資料
+                    all_values = worksheet.get_all_values()
+                    if len(all_values) <= 1:
+                        return []
+                    
+                    headers = COLUMNS
+                    records = []
+                    for row in all_values[1:]:
+                        if len(row) > 0:
+                            record = {}
+                            for i, header in enumerate(headers):
+                                if i < len(row):
+                                    record[header] = row[i]
+                                else:
+                                    record[header] = ""
+                            records.append(record)
+                else:
+                    # 有標題列，轉換為英文欄位名
+                    header_to_column = {}
+                    for i, header in enumerate(headers):
+                        if "(" in header:
+                            column_name = header.split("(")[0].strip()
+                        else:
+                            column_name = header.strip()
+                        
+                        if column_name in COLUMNS:
+                            header_to_column[header] = column_name
+                        elif i < len(COLUMNS):
+                            header_to_column[header] = COLUMNS[i]
+                    
+                    all_records = worksheet.get_all_records()
+                    records = []
+                    for record in all_records:
+                        new_record = {}
+                        for header, value in record.items():
+                            column_name = header_to_column.get(header, header.split("(")[0].strip() if "(" in header else header)
+                            new_record[column_name] = value
+                        records.append(new_record)
+            except Exception as e:
+                print(f"讀取記錄時發生錯誤：{e}")
+                return []
+            
+            # 過濾出符合條碼的記錄（檢查 scanned_barcode 或 new_barcode）
+            filtered = []
+            # 標準化條碼（移除可能的 domain 前綴）
+            barcode_normalized = barcode
+            if "/b=" in barcode:
+                # 如果包含 domain，提取條碼部分
+                barcode_normalized = barcode.split("/b=")[-1]
+            
+            for record in records:
+                scanned = record.get("scanned_barcode", "").strip()
+                new = record.get("new_barcode", "").strip()
+                
+                # 標準化記錄中的條碼
+                scanned_normalized = scanned
+                if "/b=" in scanned:
+                    scanned_normalized = scanned.split("/b=")[-1]
+                
+                new_normalized = new
+                if "/b=" in new:
+                    new_normalized = new.split("/b=")[-1]
+                
+                # 檢查條碼是否匹配（精確匹配）
+                if (barcode_normalized == scanned_normalized or 
+                    barcode_normalized == new_normalized):
+                    filtered.append(record)
+            
+            # 限制筆數
+            return filtered[:limit]
+        
+        except Exception as e:
+            print(f"查詢條碼記錄失敗：{e}")
+            return []
+    
+    def has_inbound_record(self, barcode: str) -> bool:
+        """
+        檢查條碼是否有遷入（IN）記錄
+        
+        Args:
+            barcode: 條碼字串
+        
+        Returns:
+            如果有 IN 記錄則返回 True，否則返回 False
+        """
+        logs = self.get_logs_by_barcode(barcode, limit=10)
+        for log in logs:
+            if log.get("action", "").upper() == "IN":
+                return True
+        return False
+    
+    def has_outbound_record(self, barcode: str) -> bool:
+        """
+        檢查條碼是否有遷出（OUT）記錄
+        
+        Args:
+            barcode: 條碼字串
+        
+        Returns:
+            如果有 OUT 記錄則返回 True，否則返回 False
+        """
+        logs = self.get_logs_by_barcode(barcode, limit=10)
+        for log in logs:
+            if log.get("action", "").upper() == "OUT":
+                return True
+        return False
+    
     def get_logs_by_order(self, order: str, limit: int = 100) -> list:
         """
         根據工單號查詢記錄

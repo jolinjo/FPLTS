@@ -5,6 +5,30 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.0.4] - 2025-01-XX
+
+### 新增
+- 綜合設定檔：`config/settings.ini` 用於存放系統綜合設定（包含 IP domain 設定）
+- Domain 整合：遷出時自動將 domain 寫入新條碼 URL 並記錄到 Google Sheets
+- 條碼記錄查詢：新增 `get_logs_by_barcode()` 方法，可根據條碼查詢歷史記錄
+- 遷出記錄檢查：新增 `has_outbound_record()` 方法，檢查條碼是否有遷出記錄
+- 智能功能切換：遷入時自動檢查條碼是否有 OUT 記錄，如有則自動切換到遷出功能
+
+### 改進
+- 流程驗證大小寫處理：統一將站點代號轉換為大寫進行比較，解決 P2 和 p2 不一致的問題
+- 條碼匹配邏輯：優化條碼匹配，正確處理包含 domain 的條碼（例如：`http://localhost:8000/b=條碼`）
+- 多次遷出支援：同一條碼可被遷出多次（例如：良品一批、不良品一批）
+- 自動切換邏輯：下游站點掃到上游製程條碼時，如有 OUT 記錄則自動切換到遷出功能
+
+### 修復
+- 修復流程驗證中大小寫不一致導致的驗證失敗問題
+
+### API 端點
+- 遷入 API 新增智能檢查：自動判斷條碼是否有 OUT 記錄並返回切換提示
+
+### 設定檔
+- `config/settings.ini` - 綜合設定檔（包含 domain 設定）
+
 ## [0.0.3] - 2025-01-XX
 
 ### 新增

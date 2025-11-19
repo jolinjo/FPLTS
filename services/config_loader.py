@@ -28,7 +28,8 @@ class ConfigLoader:
             "flow.ini",
             "container.ini",
             "status.ini",
-            "qrcode.ini"
+            "qrcode.ini",
+            "settings.ini"
         ]
         
         for config_file in config_files:

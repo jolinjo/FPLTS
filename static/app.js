@@ -568,6 +568,25 @@ async function handleInbound() {
         
         const data = await response.json();
         
+        // 檢查是否需要切換到遷出功能
+        if (data.should_switch_to_outbound) {
+            // 關閉遷入工作表
+            closeBottomSheet();
+            // 開啟遷出功能
+            openBottomSheet('outbound', '貨物遷出');
+            // 自動填入條碼
+            setTimeout(() => {
+                const barcodeInput = document.getElementById('barcodeInput');
+                if (barcodeInput) {
+                    barcodeInput.value = data.data.barcode;
+                    barcodeInput.focus();
+                }
+            }, 350);
+            // 顯示提示訊息
+            showAlert('提示', data.message || '該條碼已有遷入記錄，已自動切換到遷出功能', 'error');
+            return;
+        }
+        
         if (!response.ok) {
             // 收到 400 錯誤（流程錯誤等）
             throw new Error(data.detail || '遷入失敗');
