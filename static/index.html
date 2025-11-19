@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>工廠製程物流追溯系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* iOS 風格自訂樣式 */
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(180deg, #f5f5f7 0%, #e8e8ed 100%);
+            min-height: 100vh;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        /* 毛玻璃效果 */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        
+        /* iOS 大型膠囊按鈕 */
+        .btn-capsule {
+            border-radius: 9999px;
+            padding: 16px 32px;
+            font-size: 17px;
+            font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn-capsule:active {
+            transform: scale(0.98);
+            opacity: 0.8;
+        }
+        
+        /* iOS 卡片 */
+        .card {
+            border-radius: 20px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* iOS 輸入框 */
+        .input-ios {
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 17px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        
+        /* iOS 警示視窗 */
+        .alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s;
+        }
+        
+        .alert-dialog {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 320px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        /* 成功卡片動畫 */
+        .success-card {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        /* 底部工作表 */
+        .bottom-sheet {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 24px 24px 0 0;
+            box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+        }
+        
+        .bottom-sheet.open {
+            transform: translateY(0);
+        }
+        
+        /* 隱藏滾動條但保持滾動功能 */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- 設定頁面（強制登入） -->
+    <div id="setupPage" class="min-h-screen flex items-center justify-center p-6 hidden">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">工廠製程物流追溯系統</h1>
+                <p class="text-gray-600">請先設定您的工號與站點</p>
+            </div>
+            
+            <div class="card glass p-6 mb-6">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">工號</label>
+                    <input 
+                        type="text" 
+                        id="operatorInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：OP01"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">當前站點</label>
+                    <select id="stationSelect" class="input-ios w-full">
+                        <option value="">請選擇站點</option>
+                        <option value="P1">P1 - 射出</option>
+                        <option value="P2">P2 - 烘烤</option>
+                        <option value="P3">P3 - 修邊</option>
+                        <option value="P4">P4 - 組裝</option>
+                        <option value="P5">P5 - 包裝</option>
+                    </select>
+                </div>
+                
+                <button 
+                    id="saveSetupBtn" 
+                    class="btn-capsule w-full bg-blue-500 text-white"
+                >
+                    儲存設定
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 主功能頁面 -->
+    <div id="mainPage" class="min-h-screen p-4 pb-24 hidden">
+        <!-- 頂部資訊列 -->
+        <div class="card glass p-4 mb-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600">操作員</p>
+                    <p class="text-lg font-semibold text-gray-900" id="operatorDisplay">-</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-gray-600">當前站點</p>
+                    <p class="text-lg font-semibold text-gray-900" id="stationDisplay">-</p>
+                </div>
+                <button 
+                    id="changeSetupBtn" 
+                    class="text-blue-500 text-sm font-medium"
+                >
+                    變更
+                </button>
+            </div>
+        </div>
+        
+        <!-- 功能按鈕網格 -->
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <button 
+                id="inboundBtn" 
+                class="card glass p-6 text-center btn-capsule bg-green-500 text-white"
+            >
+                <div class="text-2xl mb-2">📦</div>
+                <div class="font-semibold">貨物遷入</div>
+            </button>
+            
+            <button 
+                id="outboundBtn" 
+                class="card glass p-6 text-center btn-capsule bg-blue-500 text-white"
+            >
+                <div class="text-2xl mb-2">🚀</div>
+                <div class="font-semibold">貨物遷出</div>
+            </button>
+            
+            <button 
+                id="traceBtn" 
+                class="card glass p-6 text-center btn-capsule bg-purple-500 text-white"
+            >
+                <div class="text-2xl mb-2">🔍</div>
+                <div class="font-semibold">追溯查詢</div>
+            </button>
+            
+            <button 
+                id="firstBtn" 
+                class="card glass p-6 text-center btn-capsule bg-orange-500 text-white"
+            >
+                <div class="text-2xl mb-2">✨</div>
+                <div class="font-semibold">首站遷出</div>
+            </button>
+        </div>
+        
+        <!-- 成功訊息卡片 -->
+        <div id="successCard" class="card glass p-4 mb-4 bg-green-50 border-2 border-green-200 hidden success-card">
+            <div class="flex items-center">
+                <div class="text-2xl mr-3">✅</div>
+                <div class="flex-1">
+                    <p class="font-semibold text-green-800" id="successMessage">操作成功</p>
+                    <p class="text-sm text-green-600" id="successDetail"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 底部工作表（掃描輸入） -->
+    <div id="bottomSheet" class="bottom-sheet">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-gray-900" id="sheetTitle">掃描條碼</h3>
+                <button id="closeSheetBtn" class="text-gray-500 text-2xl">×</button>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">條碼</label>
+                <input 
+                    type="text" 
+                    id="barcodeInput" 
+                    class="input-ios w-full" 
+                    placeholder="掃描或輸入條碼"
+                    autocomplete="off"
+                    autofocus
+                >
+            </div>
+            
+            <!-- 遷出專用欄位 -->
+            <div id="outboundFields" class="hidden space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">容器</label>
+                    <input 
+                        type="text" 
+                        id="containerInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：A1"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">箱號</label>
+                    <input 
+                        type="text" 
+                        id="boxSeqInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：01"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">貨態</label>
+                    <select id="statusSelect" class="input-ios w-full">
+                        <option value="G">G - 良品</option>
+                        <option value="N">N - 不良</option>
+                        <option value="S">S - 特採</option>
+                        <option value="R">R - 返工</option>
+                        <option value="E">E - 遺失</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">數量</label>
+                    <input 
+                        type="text" 
+                        id="qtyInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：0100"
+                        autocomplete="off"
+                    >
+                </div>
+            </div>
+            
+            <!-- 首站遷出專用欄位 -->
+            <div id="firstFields" class="hidden space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">工單號</label>
+                    <input 
+                        type="text" 
+                        id="orderInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：251119AA"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">產品線</label>
+                    <select id="seriesSelect" class="input-ios w-full">
+                        <option value="">請選擇產品線</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">機種</label>
+                    <select id="modelSelect" class="input-ios w-full">
+                        <option value="">請選擇機種</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">容器</label>
+                    <input 
+                        type="text" 
+                        id="firstContainerInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：A1"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">箱號</label>
+                    <input 
+                        type="text" 
+                        id="firstBoxSeqInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：01"
+                        autocomplete="off"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">貨態</label>
+                    <select id="firstStatusSelect" class="input-ios w-full">
+                        <option value="G">G - 良品</option>
+                        <option value="N">N - 不良</option>
+                        <option value="S">S - 特採</option>
+                        <option value="R">R - 返工</option>
+                        <option value="E">E - 遺失</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">數量</label>
+                    <input 
+                        type="text" 
+                        id="firstQtyInput" 
+                        class="input-ios w-full" 
+                        placeholder="例如：0100"
+                        autocomplete="off"
+                    >
+                </div>
+            </div>
+            
+            <button 
+                id="submitBtn" 
+                class="btn-capsule w-full bg-blue-500 text-white mt-4"
+            >
+                提交
+            </button>
+        </div>
+    </div>
+    
+    <!-- 警示視窗 -->
+    <div id="alertOverlay" class="alert-overlay hidden">
+        <div class="alert-dialog">
+            <div class="text-center">
+                <div class="text-4xl mb-4" id="alertIcon">⚠️</div>
+                <h3 class="text-xl font-semibold mb-2" id="alertTitle">錯誤</h3>
+                <p class="text-gray-600 mb-6" id="alertMessage"></p>
+                <button 
+                    id="alertOkBtn" 
+                    class="btn-capsule w-full bg-red-500 text-white"
+                >
+                    確定
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
