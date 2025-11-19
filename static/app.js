@@ -10,7 +10,8 @@ const AppState = {
     currentMode: null, // 'inbound', 'outbound', 'trace', 'first'
     apiBaseUrl: '', // 使用相對路徑，自動適配
     seriesOptions: [], // 產品線選項
-    modelOptions: []   // 機種選項
+    modelOptions: [],  // 機種選項
+    containerOptions: [] // 容器選項
 };
 
 // 初始化
@@ -18,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     setupEventListeners();
     loadConfigOptions();
+    // 檢查 URL 參數，如果有條碼則自動填入
+    checkUrlParams();
 });
 
 /**
@@ -70,6 +73,60 @@ function showMainPage() {
 }
 
 /**
+ * 檢查 URL 參數，如果有條碼則自動填入並開啟遷入功能
+ */
+function checkUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const barcode = urlParams.get('b'); // 簡化參數名稱
+    
+    if (barcode) {
+        // 如果有條碼參數，保存到 sessionStorage（即使未登入也能保存）
+        sessionStorage.setItem('pendingBarcode', barcode);
+        
+        // 清除 URL 參數，避免重新整理時重複觸發
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // 如果已經登入，立即處理條碼
+        if (AppState.operatorId && AppState.currentStationId) {
+            processPendingBarcode();
+        }
+    } else {
+        // 如果 URL 沒有條碼參數，檢查是否有待處理的條碼（從 sessionStorage）
+        processPendingBarcode();
+    }
+}
+
+/**
+ * 處理待處理的條碼（從 sessionStorage 或 URL 參數）
+ * 預設開啟遷入功能
+ */
+function processPendingBarcode() {
+    const pendingBarcode = sessionStorage.getItem('pendingBarcode');
+    
+    if (pendingBarcode && AppState.operatorId && AppState.currentStationId) {
+        // 清除待處理的條碼
+        sessionStorage.removeItem('pendingBarcode');
+        
+        // 等待頁面完全載入後處理
+        setTimeout(() => {
+            // 預設開啟遷入功能
+            openBottomSheet('inbound', '貨物遷入');
+            
+            // 自動填入條碼
+            setTimeout(() => {
+                const barcodeInput = document.getElementById('barcodeInput');
+                if (barcodeInput) {
+                    barcodeInput.value = pendingBarcode;
+                    // 自動聚焦到輸入框
+                    barcodeInput.focus();
+                }
+            }, 350);
+        }, 500);
+    }
+}
+
+/**
  * 設定事件監聽器
  */
 function setupEventListeners() {
@@ -110,6 +167,14 @@ function setupEventListeners() {
             handleSubmit();
         }
     });
+    
+    // 工單號輸入框自動轉換為大寫
+    const orderInput = document.getElementById('orderInput');
+    if (orderInput) {
+        orderInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
+        });
+    }
 }
 
 /**
@@ -142,10 +207,13 @@ function saveSetup() {
     
     // 顯示成功訊息
     showSuccess('設定已儲存', `操作員：${operatorId}，站點：${currentStationId}`);
+    
+    // 檢查是否有待處理的條碼（從 QR code 掃描）
+    processPendingBarcode();
 }
 
 /**
- * 載入設定選項（產品線和機種）
+ * 載入設定選項（產品線、機種和容器）
  */
 async function loadConfigOptions() {
     try {
@@ -163,6 +231,14 @@ async function loadConfigOptions() {
         if (modelData.success) {
             AppState.modelOptions = modelData.data;
             updateModelSelect();
+        }
+        
+        // 載入容器選項
+        const containerResponse = await fetch('/api/config/containers');
+        const containerData = await containerResponse.json();
+        if (containerData.success) {
+            AppState.containerOptions = containerData.data;
+            updateContainerSelects();
         }
     } catch (error) {
         console.error('載入設定選項失敗：', error);
@@ -204,6 +280,35 @@ function updateModelSelect() {
 }
 
 /**
+ * 更新容器下拉選單（遷出和首站遷出）
+ */
+function updateContainerSelects() {
+    // 更新遷出容器選單
+    const outboundSelect = document.getElementById('containerSelect');
+    if (outboundSelect) {
+        outboundSelect.innerHTML = '<option value="">請選擇容器</option>';
+        AppState.containerOptions.forEach(container => {
+            const option = document.createElement('option');
+            option.value = container.code;
+            option.textContent = `${container.code} - 容量 ${container.capacity}`;
+            outboundSelect.appendChild(option);
+        });
+    }
+    
+    // 更新首站遷出容器選單
+    const firstSelect = document.getElementById('firstContainerSelect');
+    if (firstSelect) {
+        firstSelect.innerHTML = '<option value="">請選擇容器</option>';
+        AppState.containerOptions.forEach(container => {
+            const option = document.createElement('option');
+            option.value = container.code;
+            option.textContent = `${container.code} - 容量 ${container.capacity}`;
+            firstSelect.appendChild(option);
+        });
+    }
+}
+
+/**
  * 開啟底部工作表
  */
 function openBottomSheet(mode, title) {
@@ -218,11 +323,16 @@ function openBottomSheet(mode, title) {
     // 根據模式顯示對應欄位
     if (mode === 'outbound') {
         document.getElementById('outboundFields').classList.remove('hidden');
+        // 重置容器選擇
+        document.getElementById('containerSelect').value = '';
     } else if (mode === 'first') {
         document.getElementById('firstFields').classList.remove('hidden');
-        // 重置產品線和機種選擇
+        // 重置產品線、機種和容器選擇
         document.getElementById('seriesSelect').value = '';
         document.getElementById('modelSelect').value = '';
+        document.getElementById('firstContainerSelect').value = '';
+        // 重置工單號
+        document.getElementById('orderInput').value = '';
     }
     
     // 顯示底部工作表
@@ -319,7 +429,7 @@ async function handleInbound() {
  */
 async function handleOutbound() {
     const barcode = document.getElementById('barcodeInput').value.trim();
-    const container = document.getElementById('containerInput').value.trim();
+    const container = document.getElementById('containerSelect').value;
     const boxSeq = document.getElementById('boxSeqInput').value.trim();
     const status = document.getElementById('statusSelect').value;
     const qty = document.getElementById('qtyInput').value.trim();
@@ -420,10 +530,10 @@ async function handleTrace() {
  * 處理首站遷出
  */
 async function handleFirst() {
-    const order = document.getElementById('orderInput').value.trim();
+    const order = document.getElementById('orderInput').value.trim().toUpperCase();
     const seriesCode = document.getElementById('seriesSelect').value;
     const modelCode = document.getElementById('modelSelect').value;
-    const container = document.getElementById('firstContainerInput').value.trim();
+    const container = document.getElementById('firstContainerSelect').value;
     const boxSeq = document.getElementById('firstBoxSeqInput').value.trim();
     const status = document.getElementById('firstStatusSelect').value;
     const qty = document.getElementById('firstQtyInput').value.trim();

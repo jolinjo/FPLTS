@@ -119,6 +119,27 @@ async def get_model_options():
     }
 
 
+@app.get("/api/config/containers")
+async def get_container_options():
+    """
+    取得容器選項列表
+    
+    返回所有可用的容器（Container）選項
+    """
+    container_dict = config_loader.get_section_dict("container", "Container")
+    
+    # 轉換為列表格式，包含代號和容量
+    container_list = [
+        {"code": code, "capacity": name}
+        for code, name in container_dict.items()
+    ]
+    
+    return {
+        "success": True,
+        "data": container_list
+    }
+
+
 @app.post("/api/scan/inbound")
 async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTasks):
     """
@@ -157,12 +178,12 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     # 計算工時（遷入時工時為 0）
     cycle_time = 0
     
-    # 準備記錄資料
+    # 準備記錄資料（工單號轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "IN",
         "operator": request.operator_id,
-        "order": parsed['order'],
+        "order": parsed['order'].upper(),
         "process": curr_station,
         "sku": sku,
         "container": parsed['container'],
@@ -182,7 +203,7 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
         "success": True,
         "message": "遷入成功",
         "data": {
-            "order": parsed['order'],
+            "order": parsed['order'].upper(),
             "sku": sku,
             "current_station": curr_station,
             "prev_station": prev_station
@@ -227,12 +248,12 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     # TODO: 從 Google Sheets 查詢上次遷入時間來計算實際工時
     cycle_time = 0
     
-    # 準備記錄資料
+    # 準備記錄資料（工單號轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "OUT",
         "operator": request.operator_id,
-        "order": parsed['order'],
+        "order": parsed['order'].upper(),
         "process": request.current_station_id,
         "sku": parsed['sku'],
         "container": request.container or parsed['container'],
@@ -257,7 +278,7 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
         "message": "遷出成功",
         "data": {
             "new_barcode": new_barcode,
-            "order": parsed['order'],
+            "order": parsed['order'].upper(),
             "current_station": request.current_station_id,
             "next_station": next_station
         }
@@ -295,7 +316,7 @@ async def scan_trace(request: TraceRequest):
     return {
         "success": True,
         "data": {
-            "order": order,
+            "order": order.upper(),
             "sku": parsed['sku'],
             "logs": logs,
             "statistics": {
@@ -329,9 +350,12 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     model_code_padded = request.model_code.zfill(3)[:3]
     sku = f"{request.series_code}{model_code_padded}"
     
+    # 工單號轉換為大寫
+    order_upper = request.order.upper()
+    
     # 生成第一個條碼
     barcode = BarcodeGenerator.generate(
-        order=request.order,
+        order=order_upper,
         process=request.current_station_id,
         sku=sku,
         container=request.container,
@@ -340,12 +364,12 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         qty=request.qty
     )
     
-    # 準備記錄資料
+    # 準備記錄資料（工單號轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "OUT",
         "operator": request.operator_id,
-        "order": request.order,
+        "order": order_upper,
         "process": request.current_station_id,
         "sku": sku,
         "container": request.container,
@@ -368,7 +392,7 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         "message": "首站遷出成功",
         "data": {
             "barcode": barcode,
-            "order": request.order,
+            "order": order_upper,
             "sku": sku,
             "current_station": request.current_station_id,
             "next_station": next_station

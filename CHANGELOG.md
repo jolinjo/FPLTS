@@ -5,6 +5,17 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.0.2] - 2025-01-XX
+
+### 新增
+- QR Code 掃描支援：從 URL 參數自動解析條碼並填入
+- 支援手機條碼掃描器掃描 QR code 後自動開啟瀏覽器並帶入條碼
+- 自動開啟遷入功能並聚焦到條碼輸入框
+
+### 改進
+- 簡化 URL 參數格式：使用 `?b=條碼` 取代 `?barcode=條碼`，減少 QR code 字數
+- 未登入時保存條碼參數，登入後自動處理
+
 ## [0.0.1] - 2025-01-XX
 
 ### 新增
