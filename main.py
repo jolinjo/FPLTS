@@ -18,7 +18,7 @@ from services.qrcode_generator import QRCodeGenerator
 
 load_dotenv()
 
-app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.4")
+app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.5")
 
 # 掛載靜態檔案目錄
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -48,6 +48,12 @@ class OutboundRequest(BaseModel):
 class TraceRequest(BaseModel):
     """追溯請求模型"""
     barcode: str
+
+
+class CheckBarcodeRequest(BaseModel):
+    """條碼檢查請求模型"""
+    barcode: str
+    current_station_id: str
 
 
 class FirstStationRequest(BaseModel):
@@ -86,6 +92,133 @@ async def redirect_barcode_path(barcode: str):
     """
     # 重定向到正確的查詢參數格式
     return RedirectResponse(url=f"/?b={barcode}", status_code=302)
+
+
+@app.post("/api/scan/check")
+async def check_barcode(request: CheckBarcodeRequest):
+    """
+    檢查條碼狀態 API
+    
+    用於在執行遷入/遷出前，先檢查條碼的狀態，決定應該使用哪個功能
+    返回建議的操作類型：'inbound', 'outbound', 'first'
+    """
+    # 先嘗試完整解析條碼
+    parsed = BarcodeParser.parse(request.barcode)
+    
+    # 如果完整解析失敗，嘗試部分解析（至少識別工單號和製程代號）
+    if not parsed:
+        parsed = BarcodeParser.parse_partial(request.barcode)
+        if not parsed:
+            raise HTTPException(status_code=400, detail="條碼格式錯誤，無法解析")
+    
+    # 檢查製程代號
+    process_code = parsed['process'].upper()
+    
+    # 如果是 ZZ 製程（新工單），建議使用首站遷出
+    # 對於 ZZ 製程，不需要驗證 CRC16（因為可能是不完整的條碼）
+    if process_code == 'ZZ':
+        sku = parsed.get('sku', '')
+        # 從 SKU 提取產品線和機種代碼（如果 SKU 存在）
+        series_code = ''
+        model_code = ''
+        if sku and len(sku) >= 5:
+            series_code = BarcodeParser.get_series_from_sku(sku)  # 前 2 碼
+            model_code = BarcodeParser.get_model_from_sku(sku)   # 後 3 碼
+        
+        return {
+            "success": True,
+            "suggested_action": "first",
+            "message": "檢測到新工單（ZZ 製程），建議使用首站遷出",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": sku,
+                "series_code": series_code,
+                "model_code": model_code
+            }
+        }
+    
+    # 對於完整條碼，驗證 CRC16 校驗碼
+    if not CRC16.verify(request.barcode):
+        raise HTTPException(status_code=400, detail="條碼校驗碼錯誤")
+    
+    # 取得當前站點
+    current_station = request.current_station_id.upper()
+    barcode_process = process_code.upper()
+    
+    # 判斷邏輯：
+    # 1. 如果條碼的製程代號不等於當前站點（例如：P1 條碼在 P2 站點）
+    #    檢查該條碼在當前站點（P2）是否有遷出記錄
+    #    - 如果沒有，建議使用遷入功能（從上游站點遷入）
+    #    - 如果有，建議使用遷出功能（已經遷入過，可以再次遷出）
+    # 2. 如果條碼的製程代號等於當前站點（例如：P2 條碼在 P2 站點）
+    #    檢查該條碼是否有任何遷出記錄
+    #    - 如果有，建議使用遷出功能（可以再次遷出，例如分為良品和不良品）
+    #    - 如果沒有，可能是異常情況，建議使用遷入功能
+    
+    if barcode_process != current_station:
+        # 條碼的製程代號不等於當前站點（從上游站點來的條碼）
+        # 檢查該條碼在當前站點是否有遷出記錄
+        has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, current_station)
+        
+        if has_out_at_current:
+            # 該條碼在當前站點已有遷出記錄，建議使用遷出功能
+            return {
+                "success": True,
+                "suggested_action": "outbound",
+                "message": f"該條碼在 {current_station} 站點已有遷出記錄，建議使用遷出功能",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
+        else:
+            # 該條碼在當前站點沒有遷出記錄，建議使用遷入功能
+            return {
+                "success": True,
+                "suggested_action": "inbound",
+                "message": f"檢測到 {barcode_process} 製程條碼，在 {current_station} 站點沒有遷出記錄，建議使用遷入功能",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
+    else:
+        # 條碼的製程代號等於當前站點（可能是同站點的條碼）
+        # 檢查該條碼是否有任何遷出記錄
+        has_out_record = sheet_service.has_outbound_record(request.barcode)
+        
+        if has_out_record:
+            # 如果有 OUT 記錄，建議使用遷出功能
+            return {
+                "success": True,
+                "suggested_action": "outbound",
+                "message": "該條碼已有遷出記錄，建議使用遷出功能",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
+        else:
+            # 如果沒有 OUT 記錄，建議使用遷入功能
+            return {
+                "success": True,
+                "suggested_action": "inbound",
+                "message": "該條碼可以進行遷入",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
 
 
 @app.get("/api/config/series")
@@ -197,17 +330,19 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     prev_station = parsed['process']
     curr_station = request.current_station_id
     
-    # 檢查該條碼是否已有 OUT 記錄
-    # 如果該條碼有遷出記錄，表示已經被遷出過（可能分為良品和不良品），
-    # 下游站點掃到上游製程的條碼時，應該直接使用遷出功能，不要再遷入
-    has_out_record = sheet_service.has_outbound_record(request.barcode)
+    # 檢查該條碼在當前站點是否已有 OUT 記錄
+    # 如果該條碼在當前站點有遷出記錄，表示已經在當前站點遷出過（可能分為良品和不良品），
+    # 應該直接使用遷出功能，不要再遷入
+    # 注意：這裡檢查的是「當前站點」的遷出記錄，而不是「任何站點」的遷出記錄
+    # 因為上游站點的遷出記錄不應該阻止下游站點的遷入
+    has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, curr_station)
     
-    if has_out_record:
-        # 如果已有 OUT 記錄，返回特殊狀態，讓前端切換到遷出
+    if has_out_at_current:
+        # 如果當前站點已有 OUT 記錄，返回特殊狀態，讓前端切換到遷出
         return {
             "success": False,
             "should_switch_to_outbound": True,
-            "message": "該條碼已有遷出記錄，請使用遷出功能",
+            "message": f"該條碼在 {curr_station} 站點已有遷出記錄，請使用遷出功能",
             "data": {
                 "barcode": request.barcode,
                 "order": parsed['order'].upper(),
@@ -430,6 +565,17 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         qty=request.qty
     )
     
+    # 取得 domain 設定，並組合成完整的條碼 URL
+    domain = config_loader.get_value("settings", "Settings", "domain", "")
+    if domain:
+        # 移除 domain 末尾的斜線（如果有的話）
+        domain = domain.rstrip('/')
+        # 組合成完整 URL：domain/b=條碼
+        new_barcode_with_domain = f"{domain}/b={barcode}"
+    else:
+        # 如果沒有設定 domain，只使用條碼
+        new_barcode_with_domain = barcode
+    
     # 準備記錄資料（工單號轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
@@ -444,7 +590,7 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         "status": request.status,
         "cycle_time": 0,
         "scanned_barcode": "",
-        "new_barcode": barcode
+        "new_barcode": new_barcode_with_domain  # 使用包含 domain 的完整 URL
     }
     
     # 使用 BackgroundTasks 寫入 Google Sheets
@@ -453,14 +599,15 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     # 取得下一站建議
     next_station = get_next_station(request.series_code, request.current_station_id)
     
-    # 生成 QR Code SVG
-    qr_svg = QRCodeGenerator.generate_simple_svg(barcode)
+    # 生成 QR Code SVG（使用包含 domain 的完整 URL）
+    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
     
     return {
         "success": True,
         "message": "首站遷出成功",
         "data": {
-            "barcode": barcode,
+            "barcode": barcode,  # 返回原始條碼（不含 domain）
+            "barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
             "order": order_upper,
             "sku": sku,
             "current_station": request.current_station_id,

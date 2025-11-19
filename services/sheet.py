@@ -289,6 +289,27 @@ class SheetService:
                 return True
         return False
     
+    def has_outbound_record_at_station(self, barcode: str, station_id: str) -> bool:
+        """
+        檢查條碼在指定站點是否有遷出（OUT）記錄
+        
+        Args:
+            barcode: 條碼字串
+            station_id: 製程站點代號（例如：P1, P2）
+        
+        Returns:
+            如果在指定站點有 OUT 記錄則返回 True，否則返回 False
+        """
+        logs = self.get_logs_by_barcode(barcode, limit=100)
+        station_id_upper = station_id.upper()
+        for log in logs:
+            if log.get("action", "").upper() == "OUT":
+                # 檢查記錄中的 process 欄位是否匹配指定站點
+                log_process = log.get("process", "").upper()
+                if log_process == station_id_upper:
+                    return True
+        return False
+    
     def get_logs_by_order(self, order: str, limit: int = 100) -> list:
         """
         根據工單號查詢記錄

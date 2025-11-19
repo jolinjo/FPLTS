@@ -168,7 +168,7 @@ function parseBarcode(barcode) {
 
 /**
  * 處理待處理的條碼（從 sessionStorage 或 URL 參數）
- * 預設開啟遷入功能，但如果製程是 ZZ 則開啟首站遷出
+ * 使用智能檢查功能，自動跳轉到對應功能
  */
 function processPendingBarcode() {
     const pendingBarcode = sessionStorage.getItem('pendingBarcode');
@@ -177,51 +177,20 @@ function processPendingBarcode() {
         // 清除待處理的條碼
         sessionStorage.removeItem('pendingBarcode');
         
-        // 解析條碼（移除所有 - 後解析）
-        const parsed = parseBarcode(pendingBarcode);
-        const processCode = parsed ? parsed.process.trim().toUpperCase() : '';
-        const isNewOrder = processCode === 'ZZ';
-        
-        // 調試用（可在開發時查看）
-        console.log('條碼解析:', {
-            originalBarcode: pendingBarcode,
-            parsed: parsed,
-            processCode: processCode,
-            isNewOrder: isNewOrder
-        });
-        
         // 等待頁面完全載入後處理
         setTimeout(() => {
-            if (isNewOrder) {
-                // 如果是 ZZ 製程（新工單），開啟首站遷出
-                openBottomSheet('first', '首站遷出');
-                
-                // 如果有工單號，自動填入
-                if (parsed && parsed.order) {
-                    setTimeout(() => {
-                        const orderInput = document.getElementById('orderInput');
-                        if (orderInput) {
-                            // 移除可能的補零，但保留至少一個字符
-                            let orderValue = parsed.order.replace(/^0+/, '');
-                            orderInput.value = orderValue || parsed.order;
-                            orderInput.focus();
-                        }
-                    }, 350);
+            // 開啟掃描模式，自動檢查並跳轉
+            openBottomSheet('scan', '掃描條碼');
+            
+            // 自動填入條碼並觸發檢查
+            setTimeout(() => {
+                const barcodeInput = document.getElementById('barcodeInput');
+                if (barcodeInput) {
+                    barcodeInput.value = pendingBarcode;
+                    // 觸發檢查（模擬輸入完成）
+                    checkBarcodeAndSwitch(pendingBarcode);
                 }
-            } else {
-                // 預設開啟遷入功能
-                openBottomSheet('inbound', '貨物遷入');
-                
-                // 自動填入條碼
-                setTimeout(() => {
-                    const barcodeInput = document.getElementById('barcodeInput');
-                    if (barcodeInput) {
-                        barcodeInput.value = pendingBarcode;
-                        // 自動聚焦到輸入框
-                        barcodeInput.focus();
-                    }
-                }, 350);
-            }
+            }, 350);
         }, 500);
     }
 }
@@ -236,6 +205,11 @@ function setupEventListeners() {
     // 主功能頁
     document.getElementById('changeSetupBtn').addEventListener('click', () => {
         showSetupPage();
+    });
+    
+    // 掃描條碼按鈕（智能識別）
+    document.getElementById('scanBtn').addEventListener('click', () => {
+        openBottomSheet('scan', '掃描條碼');
     });
     
     document.getElementById('inboundBtn').addEventListener('click', () => {
@@ -264,12 +238,40 @@ function setupEventListeners() {
     // QR Code 下載按鈕
     document.getElementById('downloadQrcodeBtn').addEventListener('click', downloadQRCode);
     
-    // 條碼輸入框 Enter 鍵
-    document.getElementById('barcodeInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            handleSubmit();
-        }
-    });
+    // 條碼輸入框事件監聽
+    const barcodeInput = document.getElementById('barcodeInput');
+    if (barcodeInput) {
+        // Enter 鍵提交
+        barcodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSubmit();
+            }
+        });
+        
+        // 輸入完成後自動檢查條碼（僅在掃描模式下）
+        // 延遲 500ms，避免每次輸入都檢查
+        let checkTimeout = null;
+        barcodeInput.addEventListener('input', (e) => {
+            // 只在掃描模式下自動檢查
+            if (AppState.currentMode !== 'scan') {
+                return;
+            }
+            
+            const barcode = e.target.value.trim();
+            
+            // 清除之前的定時器
+            if (checkTimeout) {
+                clearTimeout(checkTimeout);
+            }
+            
+            // 如果條碼長度足夠（至少 20 個字符），延遲檢查
+            if (barcode.length >= 20) {
+                checkTimeout = setTimeout(() => {
+                    checkBarcodeAndSwitch(barcode);
+                }, 500);
+            }
+        });
+    }
     
     // 工單號輸入框自動轉換為大寫
     const orderInput = document.getElementById('orderInput');
@@ -455,12 +457,17 @@ function updateProcessSelect() {
 /**
  * 開啟底部工作表
  */
-function openBottomSheet(mode, title) {
+function openBottomSheet(mode, title, barcode = '') {
     AppState.currentMode = mode;
     document.getElementById('sheetTitle').textContent = title;
     
     // 重置表單
-    document.getElementById('barcodeInput').value = '';
+    const barcodeInput = document.getElementById('barcodeInput');
+    if (barcode) {
+        barcodeInput.value = barcode;
+    } else {
+        barcodeInput.value = '';
+    }
     document.getElementById('outboundFields').classList.add('hidden');
     document.getElementById('firstFields').classList.add('hidden');
     
@@ -485,7 +492,7 @@ function openBottomSheet(mode, title) {
     // 聚焦到條碼輸入框（如果不是首站遷出）
     if (mode !== 'first') {
         setTimeout(() => {
-            document.getElementById('barcodeInput').focus();
+            barcodeInput.focus();
         }, 300);
     }
 }
@@ -499,10 +506,155 @@ function closeBottomSheet() {
 }
 
 /**
+ * 檢查條碼並自動切換到對應功能
+ */
+async function checkBarcodeAndSwitch(barcode) {
+    if (!barcode || !AppState.operatorId || !AppState.currentStationId) {
+        return;
+    }
+    
+    // 清理條碼（移除可能的 b= 前綴）
+    let cleanBarcode = barcode.trim();
+    if (cleanBarcode.startsWith('b=')) {
+        cleanBarcode = cleanBarcode.substring(2).trim();
+    }
+    
+    // 顯示讀取中狀態
+    const sheetTitle = document.getElementById('sheetTitle');
+    const originalTitle = sheetTitle.textContent;
+    sheetTitle.textContent = '讀取中...';
+    
+    // 禁用提交按鈕，避免重複提交
+    const submitBtn = document.getElementById('submitBtn');
+    const originalSubmitText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = '讀取中...';
+    
+    try {
+        const response = await fetch('/api/scan/check', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                barcode: cleanBarcode,
+                current_station_id: AppState.currentStationId
+            })
+        });
+        
+        const data = await response.json();
+        
+        // 恢復提交按鈕
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalSubmitText;
+        
+        if (!response.ok) {
+            // 如果檢查失敗，恢復標題
+            sheetTitle.textContent = originalTitle;
+            showAlert('錯誤', data.detail || '檢查條碼失敗', 'error');
+            return;
+        }
+        
+        // 根據建議的操作類型自動切換
+        const suggestedAction = data.suggested_action;
+        
+        if (suggestedAction === 'first') {
+            // 切換到首站遷出
+            closeBottomSheet();
+            openBottomSheet('first', '首站遷出');
+            // 如果有工單號、產品線和機種，自動填入
+            if (data.data) {
+                setTimeout(() => {
+                    // 填入工單號
+                    if (data.data.order) {
+                        const orderInput = document.getElementById('orderInput');
+                        if (orderInput) {
+                            let orderValue = data.data.order.replace(/^0+/, '');
+                            orderInput.value = orderValue || data.data.order;
+                        }
+                    }
+                    // 填入產品線（如果 SKU 存在）
+                    if (data.data.series_code) {
+                        const seriesSelect = document.getElementById('seriesSelect');
+                        if (seriesSelect) {
+                            seriesSelect.value = data.data.series_code;
+                            // 觸發產品線變更事件，更新機種選單
+                            seriesSelect.dispatchEvent(new Event('change'));
+                        }
+                    }
+                    // 填入機種（如果 SKU 存在）
+                    if (data.data.model_code) {
+                        const modelSelect = document.getElementById('modelSelect');
+                        if (modelSelect) {
+                            // 等待產品線選單更新後再設置機種
+                            setTimeout(() => {
+                                let modelCode = data.data.model_code;
+                                // 嘗試直接匹配
+                                if (modelSelect.querySelector(`option[value="${modelCode}"]`)) {
+                                    modelSelect.value = modelCode;
+                                } else {
+                                    // 如果直接匹配失敗，嘗試去掉前導零匹配
+                                    let modelCodeNoZero = modelCode.replace(/^0+/, '') || '0';
+                                    if (modelSelect.querySelector(`option[value="${modelCodeNoZero}"]`)) {
+                                        modelSelect.value = modelCodeNoZero;
+                                    } else {
+                                        // 如果還是失敗，嘗試補零到 3 碼匹配
+                                        let modelCodePadded = modelCodeNoZero.padStart(3, '0');
+                                        if (modelSelect.querySelector(`option[value="${modelCodePadded}"]`)) {
+                                            modelSelect.value = modelCodePadded;
+                                        }
+                                    }
+                                }
+                            }, 100);
+                        }
+                    }
+                    // 聚焦到工單號輸入框
+                    const orderInput = document.getElementById('orderInput');
+                    if (orderInput) {
+                        orderInput.focus();
+                    }
+                }, 350);
+            }
+        } else if (suggestedAction === 'outbound') {
+            // 切換到遷出
+            closeBottomSheet();
+            openBottomSheet('outbound', '貨物遷出', cleanBarcode);
+        } else if (suggestedAction === 'inbound') {
+            // 切換到遷入
+            closeBottomSheet();
+            openBottomSheet('inbound', '貨物遷入', cleanBarcode);
+        } else {
+            // 恢復標題
+            sheetTitle.textContent = originalTitle;
+        }
+        
+    } catch (error) {
+        // 檢查失敗，恢復標題和按鈕
+        sheetTitle.textContent = originalTitle;
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalSubmitText;
+        console.error('檢查條碼失敗：', error);
+        showAlert('錯誤', '檢查條碼時發生錯誤', 'error');
+    }
+}
+
+/**
  * 處理提交
  */
 async function handleSubmit() {
     const mode = AppState.currentMode;
+    
+    // 如果是掃描模式，先檢查條碼
+    if (mode === 'scan') {
+        const barcode = document.getElementById('barcodeInput').value.trim();
+        if (!barcode) {
+            showAlert('錯誤', '請輸入或掃描條碼', 'error');
+            return;
+        }
+        // 檢查條碼並自動切換
+        await checkBarcodeAndSwitch(barcode);
+        return;
+    }
     
     if (mode === 'inbound') {
         await handleInbound();

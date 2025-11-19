@@ -51,6 +51,66 @@ class BarcodeParser:
         }
     
     @staticmethod
+    def parse_partial(barcode: str) -> Optional[Dict[str, str]]:
+        """
+        解析部分條碼（至少包含工單號、製程代號和 SKU）
+        用於處理不完整的條碼，特別是 ZZ 製程（新工單）
+        
+        新工單格式：工單號-ZZ-SKU（例如：251119AB-ZZ-AC001）
+        後續欄位（容器、箱號、貨態、數量、校驗碼）為空
+        
+        Args:
+            barcode: 條碼字串（可能不完整，可能包含 b= 前綴）
+        
+        Returns:
+            解析後的字典，至少包含 order、process 和 sku
+            其他欄位如果不存在則為空字串
+        """
+        barcode = barcode.strip()
+        
+        # 清理可能的 b= 前綴（來自 URL 參數）
+        if barcode.startswith('b='):
+            barcode = barcode[2:].strip()
+        
+        # 嘗試用 - 分割
+        parts = barcode.split('-')
+        
+        if len(parts) < 2:
+            return None
+        
+        # 至少要有工單號和製程代號
+        order = parts[0].strip()
+        process = parts[1].strip()
+        
+        if not order or not process:
+            return None
+        
+        # 新工單（ZZ 製程）至少需要工單號、製程代號和 SKU
+        # 但如果只有工單號和製程代號，也允許（SKU 為空）
+        
+        # 確保工單號是 8 碼（補零或截斷）
+        order = order.upper().ljust(8, '0')[:8]
+        # 確保製程代號是 2 碼（但保持 ZZ 為 ZZ，不補零）
+        process = process.upper()
+        if len(process) < 2:
+            process = process.ljust(2, '0')
+        elif len(process) > 2:
+            process = process[:2]
+        
+        result = {
+            'order': order,
+            'process': process,
+            'sku': parts[2] if len(parts) > 2 else '',
+            'container': parts[3] if len(parts) > 3 else '',
+            'box_seq': parts[4] if len(parts) > 4 else '',
+            'status': parts[5] if len(parts) > 5 else '',
+            'qty': parts[6] if len(parts) > 6 else '',
+            'crc': parts[7] if len(parts) > 7 else ''
+        }
+        
+        return result
+    
+    @staticmethod
     def get_series_from_sku(sku: str) -> str:
         """
         從 SKU 取得產品系列（前2碼）
