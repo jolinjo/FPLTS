@@ -5,6 +5,45 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.1.0] - 2025-11-20
+
+### 新增
+- **PRD.md 與 Google Docs 雙向同步功能**：
+  - 支援使用 MCP 工具同步（不需要憑證）
+  - 支援使用 Google Docs API 同步（需要憑證）
+  - 自動判斷同步方向
+  - 記錄同步歷史
+- **目錄結構優化**：
+  - 創建 `mcp/` 目錄集中管理同步工具
+  - 創建 `docs/` 目錄集中管理文檔
+  - 創建 `scripts/` 目錄集中管理腳本
+  - 根目錄檔案從 20+ 個減少到 6 個核心檔案
+- **安全檢查工具**：
+  - `check_security.sh` - 檢查即將提交的檔案
+  - `check_git_history.sh` - 檢查 Git 歷史中的敏感資訊
+  - `clean_git_history.sh` - 清理 Git 歷史中的敏感資訊
+  - Git pre-commit hook 自動執行安全檢查
+- **安全文檔**：
+  - `docs/SECURITY.md` - 完整的安全指南
+  - `docs/CLEAN_HISTORY_SUMMARY.md` - 清理總結
+  - `docs/CLEAN_HISTORY_COMPLETE.md` - 清理完成指南
+
+### 改進
+- **目錄結構**：更清晰的目錄組織，易於維護
+- **安全性**：完善的安全檢查機制，防止敏感資訊洩漏
+- **文檔管理**：所有文檔集中管理，結構更清晰
+- **腳本管理**：所有腳本集中管理，使用更方便
+
+### 文檔
+- `mcp/README.md` - MCP 工具說明
+- `mcp/MCP_SYNC_GUIDE.md` - MCP 同步指南
+- `mcp/PRD_SYNC_README.md` - PRD 同步詳細說明
+- `mcp/QUICK_SYNC_GUIDE.md` - 快速同步指南
+- `mcp/UPDATE_EXISTING_DOC.md` - 更新現有文件說明
+- `docs/PROJECT_STRUCTURE.md` - 專案結構說明
+- `docs/DIRECTORY_OPTIMIZATION.md` - 目錄優化總結
+- `scripts/README.md` - 腳本使用說明
+
 ## [0.0.7] - 2025-01-XX
 
 ### 新增
