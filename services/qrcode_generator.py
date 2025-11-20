@@ -56,6 +56,9 @@ class QRCodeGenerator:
             
             # 取得 SVG 字串
             svg_string = img.to_string()
+            # 如果是 bytes，解碼為字符串
+            if isinstance(svg_string, bytes):
+                svg_string = svg_string.decode('utf-8')
             
             # 調整 SVG 大小
             # 找到 width 和 height 屬性並替換
@@ -158,6 +161,9 @@ class QRCodeGenerator:
             # 生成 SVG
             img = qr.make_image(image_factory=SvgPathImage)
             svg_string = img.to_string()
+            # 如果是 bytes，解碼為字符串
+            if isinstance(svg_string, bytes):
+                svg_string = svg_string.decode('utf-8')
             
             # 計算實際生成的尺寸
             actual_matrix_size = qr.modules_count

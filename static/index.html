@@ -117,6 +117,26 @@
         }
         
         /* 底部工作表 */
+        .bottom-sheet-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 99;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-out, visibility 0.3s ease-out;
+        }
+        
+        .bottom-sheet-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        
         .bottom-sheet {
             position: fixed;
             bottom: 0;
@@ -132,6 +152,69 @@
         
         .bottom-sheet.open {
             transform: translateY(0);
+        }
+        
+        /* 追溯結果頁面 */
+        .trace-page {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .trace-page.open {
+            display: flex;
+        }
+        
+        .trace-header {
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .trace-station-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #667eea;
+        }
+        
+        .trace-station-header {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .trace-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .trace-info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .trace-info-label {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .trace-info-value {
+            color: #1f2937;
+            font-size: 14px;
+            font-weight: 500;
         }
         
         /* 隱藏滾動條但保持滾動功能 */
@@ -276,6 +359,24 @@
     </div>
     
     <!-- 底部工作表（掃描輸入） -->
+    <!-- 追溯結果頁面 -->
+    <div id="tracePage" class="trace-page">
+        <div class="trace-header">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-bold" id="traceOrderTitle">追溯查詢</h2>
+                <button id="closeTracePageBtn" class="text-white text-3xl font-light">×</button>
+            </div>
+            <div class="text-sm opacity-90" id="traceSkuInfo"></div>
+        </div>
+        <div class="flex-1 p-4" id="traceContent">
+            <!-- 追溯內容將在這裡動態生成 -->
+        </div>
+    </div>
+    
+    <!-- 底部工作表背景遮罩 -->
+    <div id="bottomSheetOverlay" class="bottom-sheet-overlay"></div>
+    
+    <!-- 底部工作表 -->
     <div id="bottomSheet" class="bottom-sheet">
         <div class="p-6">
             <div class="flex items-center justify-between mb-4">

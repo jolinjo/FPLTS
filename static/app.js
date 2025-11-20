@@ -169,30 +169,137 @@ function parseBarcode(barcode) {
 
 /**
  * 處理待處理的條碼（從 sessionStorage 或 URL 參數）
- * 使用智能檢查功能，自動跳轉到對應功能
+ * 立即檢查條碼狀態，自動跳轉到對應功能
  */
-function processPendingBarcode() {
+async function processPendingBarcode() {
     const pendingBarcode = sessionStorage.getItem('pendingBarcode');
     
     if (pendingBarcode && AppState.operatorId && AppState.currentStationId) {
         // 清除待處理的條碼
         sessionStorage.removeItem('pendingBarcode');
         
-        // 等待頁面完全載入後處理
-        setTimeout(() => {
-            // 開啟掃描模式，自動檢查並跳轉
-            openBottomSheet('scan', '掃描條碼');
+        // 清理條碼（移除可能的 b= 前綴）
+        let cleanBarcode = pendingBarcode.trim();
+        if (cleanBarcode.startsWith('b=')) {
+            cleanBarcode = cleanBarcode.substring(2);
+        }
+        
+        // 立即檢查條碼狀態
+        try {
+            const response = await fetch('/api/scan/check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    barcode: cleanBarcode,
+                    current_station_id: AppState.currentStationId
+                })
+            });
             
-            // 自動填入條碼並觸發檢查
+            const data = await response.json();
+            
+            if (data.success && data.suggested_action) {
+                // 等待頁面完全載入後處理
+                setTimeout(() => {
+                    const action = data.suggested_action;
+                    
+                    if (action === 'first') {
+                        // 首站遷出
+                        openBottomSheet('first', '首站遷出');
+                        // 如果有工單號，自動填入
+                        if (data.data && data.data.order) {
+                            setTimeout(() => {
+                                const orderInput = document.getElementById('orderInput');
+                                if (orderInput) {
+                                    let orderValue = data.data.order.replace(/^0+/, '');
+                                    orderInput.value = orderValue || data.data.order;
+                                    orderInput.focus();
+                                }
+                                // 如果有產品線和機種，自動填入
+                                if (data.data.series_code && data.data.model_code) {
+                                    const seriesSelect = document.getElementById('seriesSelect');
+                                    const modelSelect = document.getElementById('modelSelect');
+                                    if (seriesSelect) {
+                                        seriesSelect.value = data.data.series_code;
+                                    }
+                                    if (modelSelect) {
+                                        // 處理前導零（例如：001 和 1）
+                                        const modelCode = data.data.model_code.replace(/^0+/, '') || data.data.model_code;
+                                        // 嘗試匹配機種代碼
+                                        for (let option of modelSelect.options) {
+                                            if (option.value === data.data.model_code || 
+                                                option.value === modelCode ||
+                                                option.value.replace(/^0+/, '') === modelCode) {
+                                                modelSelect.value = option.value;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }, 350);
+                        }
+                    } else if (action === 'outbound') {
+                        // 遷出
+                        openBottomSheet('outbound', '貨物遷出');
+                        setTimeout(() => {
+                            const barcodeInput = document.getElementById('barcodeInput');
+                            if (barcodeInput) {
+                                barcodeInput.value = cleanBarcode;
+                                barcodeInput.focus();
+                            }
+                        }, 350);
+                    } else if (action === 'trace') {
+                        // 只允許查詢（防止數據錯亂）
+                        openBottomSheet('trace', '追溯查詢');
+                        setTimeout(() => {
+                            const barcodeInput = document.getElementById('barcodeInput');
+                            if (barcodeInput) {
+                                barcodeInput.value = cleanBarcode;
+                                barcodeInput.focus();
+                            }
+                        }, 350);
+                        // 顯示提示訊息
+                        showAlert('提示', data.message || '該條碼已有遷出記錄，為避免數據錯亂，只能進行查詢', 'warning');
+                    } else {
+                        // 預設遷入
+                        openBottomSheet('inbound', '貨物遷入');
+                        setTimeout(() => {
+                            const barcodeInput = document.getElementById('barcodeInput');
+                            if (barcodeInput) {
+                                barcodeInput.value = cleanBarcode;
+                                barcodeInput.focus();
+                            }
+                        }, 350);
+                    }
+                }, 500);
+            } else {
+                // 檢查失敗，預設開啟遷入
+                setTimeout(() => {
+                    openBottomSheet('inbound', '貨物遷入');
+                    setTimeout(() => {
+                        const barcodeInput = document.getElementById('barcodeInput');
+                        if (barcodeInput) {
+                            barcodeInput.value = cleanBarcode;
+                            barcodeInput.focus();
+                        }
+                    }, 350);
+                }, 500);
+            }
+        } catch (error) {
+            console.error('檢查條碼失敗：', error);
+            // 檢查失敗，預設開啟遷入
             setTimeout(() => {
-                const barcodeInput = document.getElementById('barcodeInput');
-                if (barcodeInput) {
-                    barcodeInput.value = pendingBarcode;
-                    // 觸發檢查（模擬輸入完成）
-                    checkBarcodeAndSwitch(pendingBarcode);
-                }
-            }, 350);
-        }, 500);
+                openBottomSheet('inbound', '貨物遷入');
+                setTimeout(() => {
+                    const barcodeInput = document.getElementById('barcodeInput');
+                    if (barcodeInput) {
+                        barcodeInput.value = cleanBarcode;
+                        barcodeInput.focus();
+                    }
+                }, 350);
+            }, 500);
+        }
     }
 }
 
@@ -231,6 +338,17 @@ function setupEventListeners() {
     
     // 底部工作表
     document.getElementById('closeSheetBtn').addEventListener('click', closeBottomSheet);
+    
+    // 背景遮罩點擊關閉
+    document.getElementById('bottomSheetOverlay').addEventListener('click', closeBottomSheet);
+    
+    // 阻止底部工作表內部的點擊事件冒泡到遮罩
+    document.getElementById('bottomSheet').addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    
+    // 追溯結果頁面關閉按鈕
+    document.getElementById('closeTracePageBtn').addEventListener('click', closeTracePage);
     document.getElementById('submitBtn').addEventListener('click', handleSubmit);
     
     // 警示視窗
@@ -244,10 +362,10 @@ function setupEventListeners() {
     if (barcodeInput) {
         // Enter 鍵提交
         barcodeInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleSubmit();
-            }
-        });
+        if (e.key === 'Enter') {
+            handleSubmit();
+        }
+    });
         
         // 輸入完成後自動檢查條碼（僅在掃描模式下）
         // 延遲 500ms，避免每次輸入都檢查
@@ -488,7 +606,8 @@ function openBottomSheet(mode, title, barcode = '') {
         document.getElementById('orderInput').value = '';
     }
     
-    // 顯示底部工作表
+    // 顯示背景遮罩和底部工作表
+    document.getElementById('bottomSheetOverlay').classList.add('open');
     document.getElementById('bottomSheet').classList.add('open');
     
     // 聚焦到條碼輸入框（如果不是首站遷出）
@@ -503,6 +622,7 @@ function openBottomSheet(mode, title, barcode = '') {
  * 關閉底部工作表
  */
 function closeBottomSheet() {
+    document.getElementById('bottomSheetOverlay').classList.remove('open');
     document.getElementById('bottomSheet').classList.remove('open');
     AppState.currentMode = null;
 }
@@ -737,7 +857,7 @@ async function handleInbound() {
                 }
             }, 350);
             // 顯示提示訊息
-            showAlert('提示', data.message || '該條碼已有遷入記錄，已自動切換到遷出功能', 'error');
+            showAlert('提示', data.message || '該條碼已有遷入記錄，已自動切換到遷出功能', 'warning');
             return;
         }
         
@@ -860,16 +980,150 @@ async function handleTrace() {
             throw new Error(data.detail || '查詢失敗');
         }
         
-        // 顯示追溯結果
-        const stats = data.data.statistics;
-        const detail = `工單：${data.data.order}\n總數量：${stats.total_qty}\n良品：${stats.good_qty}\n良率：${stats.yield_rate}%`;
-        showSuccess('查詢成功', detail);
+        // 顯示追溯結果頁面
+        showTracePage(data.data);
         playSound('success');
         
     } catch (error) {
         showAlert('錯誤', error.message, 'error');
         playSound('error');
     }
+}
+
+/**
+ * 顯示追溯結果頁面
+ */
+function showTracePage(traceData) {
+    const tracePage = document.getElementById('tracePage');
+    const traceOrderTitle = document.getElementById('traceOrderTitle');
+    const traceSkuInfo = document.getElementById('traceSkuInfo');
+    const traceContent = document.getElementById('traceContent');
+    
+    // 設置標題
+    traceOrderTitle.textContent = `工單：${traceData.order}`;
+    traceSkuInfo.textContent = `SKU：${traceData.sku}`;
+    
+    // 清空內容
+    traceContent.innerHTML = '';
+    
+    // 獲取製程站點名稱映射
+    const processNameMap = {};
+    AppState.processOptions.forEach(p => {
+        processNameMap[p.code.toUpperCase()] = p.name;
+    });
+    
+    // 顯示統計信息（根據新的邏輯）
+    const stats = traceData.statistics;
+    const statsCard = document.createElement('div');
+    statsCard.className = 'card glass p-4 mb-4 bg-blue-50 border-2 border-blue-200';
+    statsCard.innerHTML = `
+        <div class="grid grid-cols-4 gap-4 text-center mb-4">
+            <div>
+                <p class="text-sm text-gray-600">總數量</p>
+                <p class="text-xl font-bold text-gray-900">${stats.total_qty || 0}</p>
+                <p class="text-xs text-gray-500 mt-1">（首站遷出）</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600">最終站良品</p>
+                <p class="text-xl font-bold text-green-600">${stats.final_good_qty || 0}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600">最終站不良品</p>
+                <p class="text-xl font-bold text-red-600">${stats.final_bad_qty || 0}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600">不良率</p>
+                <p class="text-xl font-bold text-red-600">${stats.defect_rate || 0}%</p>
+            </div>
+        </div>
+        <div class="text-center pt-2 border-t border-blue-300">
+            <p class="text-sm text-gray-600">良率</p>
+            <p class="text-2xl font-bold text-blue-600">${stats.yield_rate || 0}%</p>
+        </div>
+    `;
+    traceContent.appendChild(statsCard);
+    
+    // 顯示各站點時間軸
+    if (traceData.station_timeline && traceData.station_timeline.length > 0) {
+        traceData.station_timeline.forEach((station, index) => {
+            const stationCard = document.createElement('div');
+            stationCard.className = 'trace-station-card';
+            
+            const processName = processNameMap[station.process] || station.process;
+            const stationTitle = `${station.process} - ${processName}`;
+            
+            let html = `
+                <div class="trace-station-header">${stationTitle}</div>
+            `;
+            
+            if (station.in_time) {
+                html += `
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">遷入時間</span>
+                        <span class="trace-info-value">${station.in_time}</span>
+                    </div>
+                `;
+            }
+            
+            if (station.out_time) {
+                html += `
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">遷出時間</span>
+                        <span class="trace-info-value">${station.out_time}</span>
+                    </div>
+                `;
+            }
+            
+            if (station.total_time) {
+                html += `
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">總耗時間</span>
+                        <span class="trace-info-value">${station.total_time}</span>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <div class="trace-info-row">
+                    <span class="trace-info-label">投入數量</span>
+                    <span class="trace-info-value">${station.input_qty}</span>
+                </div>
+                <div class="trace-info-row">
+                    <span class="trace-info-label">產出數量</span>
+                    <span class="trace-info-value">${station.output_qty}</span>
+                </div>
+            `;
+            
+            // 顯示該站的良率（如果有遷出記錄）
+            if (traceData.statistics.station_yield_rates && traceData.statistics.station_yield_rates[station.process]) {
+                const stationYield = traceData.statistics.station_yield_rates[station.process];
+                html += `
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">當站良率</span>
+                        <span class="trace-info-value text-blue-600 font-semibold">${stationYield}%</span>
+                    </div>
+                `;
+            }
+            
+            stationCard.innerHTML = html;
+            traceContent.appendChild(stationCard);
+        });
+    } else {
+        const emptyCard = document.createElement('div');
+        emptyCard.className = 'card glass p-8 text-center';
+        emptyCard.innerHTML = '<p class="text-gray-500">暫無追溯記錄</p>';
+        traceContent.appendChild(emptyCard);
+    }
+    
+    // 顯示頁面
+    tracePage.classList.add('open');
+}
+
+/**
+ * 關閉追溯結果頁面
+ */
+function closeTracePage() {
+    document.getElementById('tracePage').classList.remove('open');
 }
 
 /**

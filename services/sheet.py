@@ -339,6 +339,56 @@ class SheetService:
                     return True
         return False
     
+    def has_inbound_record_at_station(self, barcode: str, station_id: str) -> bool:
+        """
+        檢查條碼在指定站點是否有遷入（IN）記錄
+        
+        Args:
+            barcode: 條碼字串
+            station_id: 製程站點代號（例如：P1, P2）
+        
+        Returns:
+            如果在指定站點有 IN 記錄則返回 True，否則返回 False
+        """
+        logs = self.get_logs_by_barcode(barcode, limit=100)
+        station_id_upper = station_id.upper()
+        for log in logs:
+            if log.get("action", "").upper() == "IN":
+                # 檢查記錄中的 process 欄位是否匹配指定站點
+                log_process = log.get("process", "").upper()
+                if log_process == station_id_upper:
+                    return True
+        return False
+    
+    def has_outbound_record_at_downstream_stations(self, barcode: str, current_station: str) -> bool:
+        """
+        檢查條碼在下游站點是否有遷出（OUT）記錄
+        
+        Args:
+            barcode: 條碼字串
+            current_station: 當前站點代號（例如：P2）
+        
+        Returns:
+            如果在下游站點有 OUT 記錄則返回 True，否則返回 False
+        """
+        # 定義站點順序
+        station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
+        current_order = station_order.get(current_station.upper(), 999)
+        
+        # 如果當前站點不在定義中，返回 False
+        if current_order == 999:
+            return False
+        
+        logs = self.get_logs_by_barcode(barcode, limit=100)
+        for log in logs:
+            if log.get("action", "").upper() == "OUT":
+                log_process = log.get("process", "").upper()
+                log_order = station_order.get(log_process, 999)
+                # 如果記錄的站點順序大於當前站點，說明是下游站點
+                if log_order > current_order:
+                    return True
+        return False
+    
     def get_logs_by_order(self, order: str, limit: int = 100) -> list:
         """
         根據工單號查詢記錄

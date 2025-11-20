@@ -186,21 +186,41 @@ fplts_project/
 │   ├── model.ini               # 產品機型定義
 │   ├── flow.ini                # 製程流防呆定義
 │   ├── container.ini           # 容器與容量定義
-│   └── status.ini              # 貨態定義
+│   ├── status.ini              # 貨態定義
+│   ├── qrcode.ini              # QR Code 設定
+│   └── settings.ini            # 系統設定
 ├── services/                   # 核心邏輯層
 │   ├── __init__.py
 │   ├── barcode.py              # 條碼解析、生成、CRC校驗
 │   ├── sheet.py                # Google Sheets 讀寫操作
 │   ├── config_loader.py        # INI 讀取器
-│   └── flow_validator.py       # 防呆驗證邏輯
+│   ├── flow_validator.py       # 防呆驗證邏輯
+│   └── qrcode_generator.py     # QR Code 生成器
+├── tests/                      # 測試目錄
+│   ├── __init__.py
+│   ├── conftest.py             # pytest 共享配置
+│   ├── unit/                   # 單元測試
+│   │   ├── __init__.py
+│   │   ├── test_barcode.py
+│   │   ├── test_config_loader.py
+│   │   ├── test_flow_validator.py
+│   │   ├── test_qrcode_generator.py
+│   │   └── test_sheet.py
+│   ├── integration/            # 整合測試
+│   │   └── __init__.py
+│   └── api/                    # API 測試
+│       ├── __init__.py
+│       └── test_api.py
 ├── static/                     # 前端資源
 │   ├── index.html              # SPA 主頁面
-│   ├── app.js                  # 前端控制邏輯
-│   └── sounds/                 # 音效檔 (success.mp3, error.mp3)
+│   └── app.js                  # 前端控制邏輯
 ├── .env                        # 環境變數 (GOOGLE_SHEET_ID)
 ├── credentials.json            # Google Service Account Key
 ├── main.py                     # FastAPI 應用程式入口
-└── requirements.txt            # Python 依賴清單
+├── pytest.ini                  # pytest 配置
+├── requirements.txt            # Python 依賴清單
+├── run_tests.sh                # 測試執行腳本（根目錄）
+└── run_tests_cn.py             # 中文測試報告腳本（根目錄）
 ```
 
 ---

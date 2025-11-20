@@ -18,7 +18,7 @@ from services.qrcode_generator import QRCodeGenerator
 
 load_dotenv()
 
-app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.6")
+app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.7")
 
 # 掛載靜態檔案目錄
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -147,27 +147,32 @@ async def check_barcode(request: CheckBarcodeRequest):
     current_station = request.current_station_id.upper()
     barcode_process = process_code.upper()
     
-    # 判斷邏輯：
-    # 1. 如果條碼的製程代號不等於當前站點（例如：P1 條碼在 P2 站點）
-    #    檢查該條碼在當前站點（P2）是否有遷出記錄
-    #    - 如果沒有，建議使用遷入功能（從上游站點遷入）
-    #    - 如果有，建議使用遷出功能（已經遷入過，可以再次遷出）
-    # 2. 如果條碼的製程代號等於當前站點（例如：P2 條碼在 P2 站點）
-    #    檢查該條碼是否有任何遷出記錄
-    #    - 如果有，建議使用遷出功能（可以再次遷出，例如分為良品和不良品）
-    #    - 如果沒有，可能是異常情況，建議使用遷入功能
+    # ========== 根據 BARCODE_SCAN_LOGIC.md 定義的邏輯 ==========
+    # 優先級順序：
+    # 1. ZZ 製程 → 首站遷出（已在上面處理）
+    # 2. 上一站條碼 + 當前站點或下游站點已有遷出記錄 → 只允許查詢（防止數據錯亂）
+    # 3. 當前站點已有遷入記錄 → 遷出
+    # 4. 當前站點已有遷出記錄 → 遷出
+    # 5. 沒有記錄 → 遷入（根據條碼與站點關係）
     
-    if barcode_process != current_station:
-        # 條碼的製程代號不等於當前站點（從上游站點來的條碼）
-        # 檢查該條碼在當前站點是否有遷出記錄
+    # 判斷條碼與當前站點的關係（上一站/本站/下一站）
+    station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
+    barcode_order = station_order.get(barcode_process, 999)
+    current_order = station_order.get(current_station, 999)
+    
+    # ========== 第二優先級：上一站條碼 + 當前站點或下游站點已有遷出記錄 ==========
+    # 防止數據錯亂：如果條碼已經流到下游，不能再遷入或遷出
+    if barcode_order < current_order:
+        # 這是上一站條碼
         has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, current_station)
+        has_out_at_downstream = sheet_service.has_outbound_record_at_downstream_stations(request.barcode, current_station)
         
-        if has_out_at_current:
-            # 該條碼在當前站點已有遷出記錄，建議使用遷出功能
+        if has_out_at_current or has_out_at_downstream:
+            # 當前站點或下游站點已有遷出記錄 → 只允許查詢
             return {
                 "success": True,
-                "suggested_action": "outbound",
-                "message": f"該條碼在 {current_station} 站點已有遷出記錄，建議使用遷出功能",
+                "suggested_action": "trace",
+                "message": f"該條碼在當前站點或下游站點已有遷出記錄，為避免數據錯亂，只能進行查詢",
                 "data": {
                     "barcode": request.barcode,
                     "order": parsed['order'].upper(),
@@ -175,50 +180,81 @@ async def check_barcode(request: CheckBarcodeRequest):
                     "sku": parsed['sku']
                 }
             }
-        else:
-            # 該條碼在當前站點沒有遷出記錄，建議使用遷入功能
-            return {
-                "success": True,
-                "suggested_action": "inbound",
-                "message": f"檢測到 {barcode_process} 製程條碼，在 {current_station} 站點沒有遷出記錄，建議使用遷入功能",
-                "data": {
-                    "barcode": request.barcode,
-                    "order": parsed['order'].upper(),
-                    "process": process_code,
-                    "sku": parsed['sku']
-                }
+    
+    # ========== 第三優先級：檢查當前站點是否有遷入記錄 ==========
+    has_in_at_current = sheet_service.has_inbound_record_at_station(request.barcode, current_station)
+    
+    if has_in_at_current:
+        # 當前站點已有遷入記錄 → 必須先遷出
+        return {
+            "success": True,
+            "suggested_action": "outbound",
+            "message": f"該條碼在 {current_station} 站點已有遷入記錄，請使用遷出功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
             }
+        }
+    
+    # ========== 第四優先級：檢查當前站點是否有遷出記錄 ==========
+    has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, current_station)
+    
+    if has_out_at_current:
+        # 當前站點已有遷出記錄 → 可以再次遷出（例如：分為良品和不良品）
+        return {
+            "success": True,
+            "suggested_action": "outbound",
+            "message": f"該條碼在 {current_station} 站點已有遷出記錄，可以再次遷出",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
+            }
+        }
+    
+    # ========== 最低優先級：沒有記錄 → 根據條碼與站點關係決定 ==========
+    if barcode_order < current_order:
+        # 上一站條碼 → 建議遷入（正常流程）
+        return {
+            "success": True,
+            "suggested_action": "inbound",
+            "message": f"檢測到 {barcode_process} 製程條碼（上一站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
+            }
+        }
+    elif barcode_order == current_order:
+        # 本站條碼 → 建議遷入（可能是異常情況）
+        return {
+            "success": True,
+            "suggested_action": "inbound",
+            "message": f"檢測到 {barcode_process} 製程條碼（本站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
+            }
+        }
     else:
-        # 條碼的製程代號等於當前站點（可能是同站點的條碼）
-        # 檢查該條碼是否有任何遷出記錄
-        has_out_record = sheet_service.has_outbound_record(request.barcode)
-        
-        if has_out_record:
-            # 如果有 OUT 記錄，建議使用遷出功能
-            return {
-                "success": True,
-                "suggested_action": "outbound",
-                "message": "該條碼已有遷出記錄，建議使用遷出功能",
-                "data": {
-                    "barcode": request.barcode,
-                    "order": parsed['order'].upper(),
-                    "process": process_code,
-                    "sku": parsed['sku']
-                }
+        # 下一站條碼 → 建議遷入（可能是跳站異常）
+        return {
+            "success": True,
+            "suggested_action": "inbound",
+            "message": f"檢測到 {barcode_process} 製程條碼（下一站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
             }
-        else:
-            # 如果沒有 OUT 記錄，建議使用遷入功能
-            return {
-                "success": True,
-                "suggested_action": "inbound",
-                "message": "該條碼可以進行遷入",
-                "data": {
-                    "barcode": request.barcode,
-                    "order": parsed['order'].upper(),
-                    "process": process_code,
-                    "sku": parsed['sku']
-                }
-            }
+        }
 
 
 @app.get("/api/config/series")
@@ -329,6 +365,23 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     sku = parsed['sku']
     prev_station = parsed['process']
     curr_station = request.current_station_id
+    
+    # 檢查該條碼在當前站點是否已有 IN 記錄
+    # 如果該條碼在當前站點已經遷入過，應該使用遷出功能，不能再遷入
+    has_in_at_current = sheet_service.has_inbound_record_at_station(request.barcode, curr_station)
+    
+    if has_in_at_current:
+        # 如果當前站點已有 IN 記錄，返回特殊狀態，讓前端切換到遷出
+        return {
+            "success": False,
+            "should_switch_to_outbound": True,
+            "message": f"該條碼在 {curr_station} 站點已有遷入記錄，請使用遷出功能",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "sku": sku
+            }
+        }
     
     # 檢查該條碼在當前站點是否已有 OUT 記錄
     # 如果該條碼在當前站點有遷出記錄，表示已經在當前站點遷出過（可能分為良品和不良品），
@@ -492,7 +545,11 @@ async def scan_trace(request: TraceRequest):
     追溯查詢 API
     
     根據條碼查詢該工單的時間軸與良率統計
+    按製程站點分組，計算出入時間、總耗時間、投入數量、產出數量
     """
+    from collections import defaultdict
+    from datetime import datetime
+    
     # 解析條碼
     parsed = BarcodeParser.parse(request.barcode)
     if not parsed:
@@ -502,28 +559,181 @@ async def scan_trace(request: TraceRequest):
     order = parsed['order']
     logs = sheet_service.get_logs_by_order(order)
     
-    # 計算良率統計
-    total_qty = 0
-    good_qty = 0
-    for log in logs:
-        qty = int(log.get("qty", 0))
-        status = log.get("status", "")
-        total_qty += qty
-        if status == "G":  # 良品
-            good_qty += qty
+    # 按製程站點分組記錄
+    station_logs = defaultdict(lambda: {"in": [], "out": []})
     
-    yield_rate = (good_qty / total_qty * 100) if total_qty > 0 else 0
+    for log in logs:
+        process = log.get("process", "").upper()
+        action = log.get("action", "").upper()
+        timestamp_str = log.get("timestamp", "")
+        
+        # 解析時間戳記
+        try:
+            if isinstance(timestamp_str, str) and timestamp_str.strip():
+                # 嘗試多種時間格式
+                timestamp = None
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S.%f"]:
+                    try:
+                        timestamp = datetime.strptime(timestamp_str.strip(), fmt)
+                        break
+                    except:
+                        continue
+                if timestamp is None:
+                    continue  # 如果所有格式都失敗，跳過這筆記錄
+            elif isinstance(timestamp_str, datetime):
+                timestamp = timestamp_str
+            else:
+                continue  # 無效的時間戳記，跳過
+        except Exception as e:
+            print(f"解析時間戳記失敗：{timestamp_str}, 錯誤：{e}")
+            continue
+        
+        log_entry = {
+            "timestamp": timestamp,
+            "timestamp_str": timestamp_str,
+            "operator": log.get("operator", ""),
+            "qty": int(log.get("qty", 0) or 0),
+            "status": log.get("status", ""),
+            "container": log.get("container", ""),
+            "box_seq": log.get("box_seq", ""),
+            "cycle_time": float(log.get("cycle_time", 0) or 0)
+        }
+        
+        if action == "IN":
+            station_logs[process]["in"].append(log_entry)
+        elif action == "OUT":
+            station_logs[process]["out"].append(log_entry)
+    
+    # 按時間排序每個站點的記錄
+    for process in station_logs:
+        station_logs[process]["in"].sort(key=lambda x: x["timestamp"])
+        station_logs[process]["out"].sort(key=lambda x: x["timestamp"])
+    
+    # 構建站點時間軸（按最早時間排序）
+    station_timeline = []
+    for process, records in station_logs.items():
+        # 找到最早的記錄時間
+        earliest_time = None
+        if records["in"]:
+            earliest_time = records["in"][0]["timestamp"]
+        if records["out"]:
+            out_time = records["out"][0]["timestamp"]
+            if earliest_time is None or out_time < earliest_time:
+                earliest_time = out_time
+        
+        if earliest_time:
+            # 計算投入數量（所有 IN 記錄的數量總和）
+            input_qty = sum(r["qty"] for r in records["in"])
+            
+            # 計算產出數量（所有 OUT 記錄的數量總和）
+            output_qty = sum(r["qty"] for r in records["out"])
+            
+            # 計算總耗時間（從最早 IN 到最晚 OUT）
+            total_time = None
+            if records["in"] and records["out"]:
+                first_in = records["in"][0]["timestamp"]
+                last_out = records["out"][-1]["timestamp"]
+                time_diff = last_out - first_in
+                total_seconds = time_diff.total_seconds()
+                hours = int(total_seconds // 3600)
+                minutes = int((total_seconds % 3600) // 60)
+                seconds = int(total_seconds % 60)
+                total_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            # 獲取出入時間
+            in_time = records["in"][0]["timestamp_str"] if records["in"] else None
+            out_time = records["out"][-1]["timestamp_str"] if records["out"] else None
+            
+            station_timeline.append({
+                "process": process,
+                "earliest_time": earliest_time.isoformat() if earliest_time else None,
+                "in_time": in_time,
+                "out_time": out_time,
+                "total_time": total_time,
+                "input_qty": input_qty,
+                "output_qty": output_qty,
+                "in_records": records["in"],
+                "out_records": records["out"]
+            })
+    
+    # 按最早時間排序
+    station_timeline.sort(key=lambda x: x["earliest_time"] if x["earliest_time"] else "")
+    
+    # ========== 計算統計數據（根據新的邏輯）==========
+    # 1. 總數 = 首站遷出的良品與不良品加總
+    # 找到首站（第一個有 OUT 記錄的站點，按時間順序）
+    first_station = None
+    first_station_time = None
+    
+    # 找到最早有遷出記錄的站點（按時間排序）
+    for process, records in station_logs.items():
+        if records["out"]:  # 有遷出記錄
+            # 找到最早的遷出時間
+            earliest_out_time = records["out"][0]["timestamp"]
+            
+            # 如果這是第一個找到的站點，或者時間更早，則更新首站
+            if first_station_time is None or earliest_out_time < first_station_time:
+                first_station = process
+                first_station_time = earliest_out_time
+    
+    # 計算首站遷出的總數（良品 + 不良品）
+    total_qty = 0
+    if first_station and first_station in station_logs:
+        for out_record in station_logs[first_station]["out"]:
+            total_qty += out_record["qty"]
+    
+    # 2. 找到最終站（最後一個有 OUT 記錄的站點，按時間順序）
+    final_station = None
+    final_station_time = None
+    
+    for process, records in station_logs.items():
+        if records["out"]:  # 有遷出記錄
+            # 找到最晚的遷出時間
+            latest_out_time = records["out"][-1]["timestamp"]
+            
+            # 如果這是第一個找到的站點，或者時間更晚，則更新最終站
+            if final_station_time is None or latest_out_time > final_station_time:
+                final_station = process
+                final_station_time = latest_out_time
+    
+    # 3. 計算最終站的良品和不良品數量
+    final_good_qty = 0
+    final_bad_qty = 0
+    
+    if final_station and final_station in station_logs:
+        for out_record in station_logs[final_station]["out"]:
+            qty = out_record["qty"]
+            status = out_record["status"].upper()
+            if status == "G":  # 良品
+                final_good_qty += qty
+            else:  # 不良品（N, S, R, E 等）
+                final_bad_qty += qty
+    
+    # 4. 計算不良率 = 不良品/總數
+    defect_rate = (final_bad_qty / total_qty * 100) if total_qty > 0 else 0
+    
+    # 5. 計算各製程站的良率
+    station_yield_rates = {}
+    for process, records in station_logs.items():
+        if records["out"]:  # 有遷出記錄
+            station_total = sum(r["qty"] for r in records["out"])
+            station_good = sum(r["qty"] for r in records["out"] if r["status"].upper() == "G")
+            station_yield = (station_good / station_total * 100) if station_total > 0 else 0
+            station_yield_rates[process] = round(station_yield, 2)
     
     return {
         "success": True,
         "data": {
             "order": order.upper(),
             "sku": parsed['sku'],
-            "logs": logs,
+            "station_timeline": station_timeline,
             "statistics": {
-                "total_qty": total_qty,
-                "good_qty": good_qty,
-                "yield_rate": round(yield_rate, 2)
+                "total_qty": total_qty,  # 首站遷出的總數
+                "final_good_qty": final_good_qty,  # 最終站的良品數量
+                "final_bad_qty": final_bad_qty,  # 最終站的不良品數量
+                "defect_rate": round(defect_rate, 2),  # 不良率 = 不良品/總數
+                "yield_rate": round((final_good_qty / total_qty * 100) if total_qty > 0 else 0, 2),  # 良率 = 良品/總數
+                "station_yield_rates": station_yield_rates  # 各製程站的良率
             }
         }
     }
@@ -537,12 +747,13 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     手動輸入工單資訊，生成第一個條碼
     從產品線代號和機種代號自動組合成 SKU
     """
-    # 驗證產品線代號是否存在
+    # 驗證產品線代號是否存在（ConfigParser 會將鍵轉為小寫）
     series_dict = config_loader.get_section_dict("series", "Series")
-    if request.series_code not in series_dict:
+    series_code_lower = request.series_code.lower()
+    if series_code_lower not in series_dict:
         raise HTTPException(status_code=400, detail=f"無效的產品線代號：{request.series_code}")
     
-    # 驗證機種代號是否存在
+    # 驗證機種代號是否存在（ConfigParser 會將鍵轉為小寫）
     model_dict = config_loader.get_section_dict("model", "Model")
     if request.model_code not in model_dict:
         raise HTTPException(status_code=400, detail=f"無效的機種代號：{request.model_code}")
