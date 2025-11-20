@@ -126,23 +126,52 @@ class SheetService:
             spreadsheet = self.client.open_by_key(self.sheet_id)
             worksheet = spreadsheet.worksheet("Logs")
             
-            # 檢查是否需要建立標題列
+            # 讀取或建立標題列
             try:
                 headers = worksheet.row_values(1)
                 if not headers or len(headers) == 0:
                     # 第一行為空，建立標題列（使用帶中文說明的標題）
                     worksheet.append_row(COLUMN_HEADERS)
+                    headers = COLUMN_HEADERS
             except:
                 # 如果無法讀取第一行，嘗試建立標題列
                 try:
                     worksheet.append_row(COLUMN_HEADERS)
+                    headers = COLUMN_HEADERS
                 except:
-                    pass  # 如果已經有標題列，忽略錯誤
+                    # 如果已經有標題列，使用預設順序
+                    headers = COLUMN_HEADERS
             
-            # 準備資料列（按照 COLUMNS 順序）
+            # 建立標題到欄位的映射（根據 Sheet 中的實際標題順序）
+            header_to_column = {}
+            for i, header in enumerate(headers):
+                # 從標題中提取欄位名（例如："order (工單號)" -> "order"）
+                if "(" in header:
+                    column_name = header.split("(")[0].strip()
+                else:
+                    column_name = header.strip()
+                
+                # 如果提取的欄位名在 COLUMNS 中，使用它；否則使用索引對應的 COLUMNS
+                if column_name in COLUMNS:
+                    header_to_column[header] = column_name
+                elif i < len(COLUMNS):
+                    header_to_column[header] = COLUMNS[i]
+            
+            # 準備資料列（按照 Sheet 中的實際欄位順序）
             row_data = []
-            for col in COLUMNS:
-                value = log_data.get(col, "")
+            for header in headers:
+                # 找到對應的欄位名
+                column_name = header_to_column.get(header, None)
+                if column_name:
+                    value = log_data.get(column_name, "")
+                else:
+                    # 如果找不到對應的欄位，嘗試直接從標題提取
+                    if "(" in header:
+                        column_name = header.split("(")[0].strip()
+                        value = log_data.get(column_name, "")
+                    else:
+                        value = ""
+                
                 # 轉換為字串
                 if value is None:
                     value = ""

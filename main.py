@@ -18,7 +18,7 @@ from services.qrcode_generator import QRCodeGenerator
 
 load_dotenv()
 
-app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.5")
+app = FastAPI(title="工廠製程物流追溯與分析系統", version="0.0.6")
 
 # 掛載靜態檔案目錄
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -363,13 +363,13 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     # 計算工時（遷入時工時為 0）
     cycle_time = 0
     
-    # 準備記錄資料（工單號轉換為大寫）
+    # 準備記錄資料（工單號和站點轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "IN",
         "operator": request.operator_id,
         "order": parsed['order'].upper(),
-        "process": curr_station,
+        "process": curr_station.upper(),
         "sku": sku,
         "container": parsed['container'],
         "box_seq": parsed['box_seq'],
@@ -390,8 +390,8 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
         "data": {
             "order": parsed['order'].upper(),
             "sku": sku,
-            "current_station": curr_station,
-            "prev_station": prev_station
+            "current_station": curr_station.upper(),
+            "prev_station": prev_station.upper()
         }
     }
 
@@ -444,13 +444,13 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
         # 如果沒有設定 domain，只使用條碼
         new_barcode_with_domain = new_barcode
     
-    # 準備記錄資料（工單號轉換為大寫）
+    # 準備記錄資料（工單號和站點轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "OUT",
         "operator": request.operator_id,
         "order": parsed['order'].upper(),
-        "process": request.current_station_id,
+        "process": request.current_station_id.upper(),
         "sku": parsed['sku'],
         "container": request.container or parsed['container'],
         "box_seq": request.box_seq or parsed['box_seq'],
@@ -479,8 +479,8 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
             "new_barcode": new_barcode,  # 返回原始條碼（不含 domain）
             "new_barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
             "order": parsed['order'].upper(),
-            "current_station": request.current_station_id,
-            "next_station": next_station,
+            "current_station": request.current_station_id.upper(),
+            "next_station": next_station.upper() if next_station else None,
             "qr_code_svg": qr_svg
         }
     }
@@ -576,13 +576,13 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         # 如果沒有設定 domain，只使用條碼
         new_barcode_with_domain = barcode
     
-    # 準備記錄資料（工單號轉換為大寫）
+    # 準備記錄資料（工單號和站點轉換為大寫）
     log_data = {
         "timestamp": datetime.now(),
         "action": "OUT",
         "operator": request.operator_id,
         "order": order_upper,
-        "process": request.current_station_id,
+        "process": request.current_station_id.upper(),
         "sku": sku,
         "container": request.container,
         "box_seq": request.box_seq,
@@ -610,8 +610,8 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
             "barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
             "order": order_upper,
             "sku": sku,
-            "current_station": request.current_station_id,
-            "next_station": next_station,
+            "current_station": request.current_station_id.upper(),
+            "next_station": next_station.upper() if next_station else None,
             "qr_code_svg": qr_svg
         }
     }

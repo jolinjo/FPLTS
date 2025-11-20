@@ -84,11 +84,12 @@ function updateStationDisplay() {
     
     // 查找對應的站點名稱
     const process = AppState.processOptions.find(p => p.code === AppState.currentStationId);
+    const stationCodeUpper = AppState.currentStationId ? AppState.currentStationId.toUpperCase() : '';
     if (process) {
-        stationDisplay.textContent = `${AppState.currentStationId} - ${process.name}`;
+        stationDisplay.textContent = `${stationCodeUpper} - ${process.name}`;
     } else {
         // 如果找不到，只顯示代號
-        stationDisplay.textContent = AppState.currentStationId;
+        stationDisplay.textContent = stationCodeUpper;
     }
 }
 
@@ -312,7 +313,8 @@ function saveSetup() {
     
     // 顯示成功訊息（包含站點中文名稱）
     const process = AppState.processOptions.find(p => p.code === currentStationId);
-    const stationDisplay = process ? `${currentStationId} - ${process.name}` : currentStationId;
+    const stationCodeUpper = currentStationId ? currentStationId.toUpperCase() : '';
+    const stationDisplay = process ? `${stationCodeUpper} - ${process.name}` : stationCodeUpper;
     showSuccess('設定已儲存', `操作員：${operatorId}，站點：${stationDisplay}`);
     
     // 檢查是否有待處理的條碼（從 QR code 掃描）

@@ -5,6 +5,23 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.0.6] - 2025-01-XX
+
+### 改進
+- 站點代號統一為大寫：所有寫入 Google Sheets 的站點代號統一轉換為大寫格式
+- 前端顯示統一為大寫：人機界面中顯示的站點代號統一轉換為大寫格式（例如：`P2 - 烘烤`）
+- API 返回統一為大寫：所有 API 返回的站點資訊（`current_station`、`next_station`、`prev_station`）統一轉換為大寫
+- Google Sheets 寫入邏輯優化：寫入時自動適應 Sheet 中的實際欄位順序，支援手動變更欄位順序
+
+### 修復
+- 修復寫入 Google Sheets 時站點代號為小寫的問題
+- 修復前端界面顯示站點代號為小寫的問題
+- 修復手動變更 Sheet 欄位順序時資料寫入錯誤欄位的問題
+
+### 技術細節
+- 寫入 Sheet 時會讀取實際標題列，建立標題到欄位的映射，確保資料寫入正確的欄位
+- 所有站點相關的資料處理都統一轉換為大寫，保持一致性
+
 ## [0.0.5] - 2025-01-XX
 
 ### 新增
