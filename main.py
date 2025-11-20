@@ -433,10 +433,17 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
         "new_barcode": ""
     }
     
-    # 使用 BackgroundTasks 寫入 Google Sheets（非阻塞）
-    background_tasks.add_task(write_to_sheet, log_data)
+    # 同步寫入 Google Sheets（檢查是否成功）
+    write_success = sheet_service.write_log(log_data)
     
-    # 立即回傳成功回應
+    if not write_success:
+        # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
+        raise HTTPException(
+            status_code=500, 
+            detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
+        )
+    
+    # 寫入成功，回傳成功回應
     return {
         "success": True,
         "message": "遷入成功",
@@ -514,8 +521,15 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
         "new_barcode": new_barcode_with_domain
     }
     
-    # 使用 BackgroundTasks 寫入 Google Sheets
-    background_tasks.add_task(write_to_sheet, log_data)
+    # 同步寫入 Google Sheets（檢查是否成功）
+    write_success = sheet_service.write_log(log_data)
+    
+    if not write_success:
+        # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
+        raise HTTPException(
+            status_code=500, 
+            detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
+        )
     
     # 取得下一站建議
     series = BarcodeParser.get_series_from_sku(parsed['sku'])
@@ -524,7 +538,7 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     # 生成 QR Code SVG（使用包含 domain 的完整 URL）
     qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
     
-    # 立即回傳成功回應
+    # 寫入成功，回傳成功回應
     return {
         "success": True,
         "message": "遷出成功",
@@ -609,9 +623,30 @@ async def scan_trace(request: TraceRequest):
         station_logs[process]["in"].sort(key=lambda x: x["timestamp"])
         station_logs[process]["out"].sort(key=lambda x: x["timestamp"])
     
-    # 構建站點時間軸（按最早時間排序）
-    station_timeline = []
+    # 定義站點順序（用於確定首站和計算投入數量）
+    station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
+    
+    # 找到首站（第一個有OUT記錄的站點，按站點順序）
+    first_station = None
+    first_station_order = None
     for process, records in station_logs.items():
+        if records["out"]:  # 有遷出記錄
+            process_order = station_order.get(process, 999)
+            if first_station_order is None or process_order < first_station_order:
+                first_station = process
+                first_station_order = process_order
+    
+    # 構建站點時間軸（按站點順序排序，而不是按時間）
+    station_timeline = []
+    # 按站點順序處理每個站點
+    sorted_processes = sorted(station_logs.keys(), key=lambda p: station_order.get(p, 999))
+    
+    # 用於追蹤上一站的產出良品數量
+    previous_station_good_qty = None
+    
+    for process in sorted_processes:
+        records = station_logs[process]
+        
         # 找到最早的記錄時間
         earliest_time = None
         if records["in"]:
@@ -622,11 +657,27 @@ async def scan_trace(request: TraceRequest):
                 earliest_time = out_time
         
         if earliest_time:
-            # 計算投入數量（所有 IN 記錄的數量總和）
-            input_qty = sum(r["qty"] for r in records["in"])
+            # 計算投入數量：
+            # - 如果是首站，使用所有 IN 記錄的數量總和
+            # - 如果不是首站，使用上一站的產出良品數量
+            if process == first_station:
+                # 首站：投入數量 = 所有 IN 記錄的數量總和
+                input_qty = sum(r["qty"] for r in records["in"])
+            else:
+                # 非首站：投入數量 = 上一站的產出良品數量
+                input_qty = previous_station_good_qty if previous_station_good_qty is not None else 0
             
             # 計算產出數量（所有 OUT 記錄的數量總和）
             output_qty = sum(r["qty"] for r in records["out"])
+            
+            # 計算產出良品數量（所有 OUT 記錄中狀態為 G 的數量總和）
+            output_good_qty = sum(r["qty"] for r in records["out"] if r["status"].upper() == "G")
+            
+            # 計算產出不良品數量（所有 OUT 記錄中狀態不是 G 的數量總和）
+            output_bad_qty = sum(r["qty"] for r in records["out"] if r["status"].upper() != "G")
+            
+            # 更新上一站的產出良品數量（用於下一個站點的投入數量計算）
+            previous_station_good_qty = output_good_qty
             
             # 計算總耗時間（從最早 IN 到最晚 OUT）
             total_time = None
@@ -652,12 +703,14 @@ async def scan_trace(request: TraceRequest):
                 "total_time": total_time,
                 "input_qty": input_qty,
                 "output_qty": output_qty,
+                "output_good_qty": output_good_qty,
+                "output_bad_qty": output_bad_qty,
                 "in_records": records["in"],
                 "out_records": records["out"]
             })
     
-    # 按最早時間排序
-    station_timeline.sort(key=lambda x: x["earliest_time"] if x["earliest_time"] else "")
+    # 按站點順序排序（P1, P2, P3, P4, P5），而不是按時間
+    station_timeline.sort(key=lambda x: station_order.get(x["process"], 999))
     
     # ========== 計算統計數據（根據新的邏輯）==========
     # 1. 總數 = 首站遷出的良品與不良品加總
@@ -696,9 +749,8 @@ async def scan_trace(request: TraceRequest):
                 final_station = process
                 final_station_time = latest_out_time
     
-    # 3. 計算最終站的良品和不良品數量
+    # 3. 計算最終站的良品數量
     final_good_qty = 0
-    final_bad_qty = 0
     
     if final_station and final_station in station_logs:
         for out_record in station_logs[final_station]["out"]:
@@ -706,33 +758,95 @@ async def scan_trace(request: TraceRequest):
             status = out_record["status"].upper()
             if status == "G":  # 良品
                 final_good_qty += qty
-            else:  # 不良品（N, S, R, E 等）
-                final_bad_qty += qty
     
-    # 4. 計算不良率 = 不良品/總數
-    defect_rate = (final_bad_qty / total_qty * 100) if total_qty > 0 else 0
+    # 4. 計算全製程不良品 = 首站投入總數 - 最終站良品數
+    total_defect_qty = total_qty - final_good_qty
     
-    # 5. 計算各製程站的良率
+    # 5. 計算直通率 = 最終站良品數 / 首站投入總數 × 100%
+    first_pass_rate = (final_good_qty / total_qty * 100) if total_qty > 0 else 0
+    
+    # 6. 計算全製程用時（累加各製程的總耗時間）
+    total_process_time_seconds = 0
+    for station in station_timeline:
+        if station.get("total_time"):
+            # 解析時間格式 "HH:MM:SS"
+            time_parts = station["total_time"].split(":")
+            if len(time_parts) == 3:
+                hours = int(time_parts[0])
+                minutes = int(time_parts[1])
+                seconds = int(time_parts[2])
+                total_process_time_seconds += hours * 3600 + minutes * 60 + seconds
+    
+    # 格式化全製程用時
+    total_hours = int(total_process_time_seconds // 3600)
+    total_minutes = int((total_process_time_seconds % 3600) // 60)
+    total_seconds = int(total_process_time_seconds % 60)
+    total_process_time = f"{total_hours:02d}:{total_minutes:02d}:{total_seconds:02d}"
+    
+    # 5. 計算各製程站的良率（產出良品數量 / 投入數量）
+    # 注意：當站良率必須基於投入數量計算，而不是產出總數
     station_yield_rates = {}
     for process, records in station_logs.items():
-        if records["out"]:  # 有遷出記錄
-            station_total = sum(r["qty"] for r in records["out"])
-            station_good = sum(r["qty"] for r in records["out"] if r["status"].upper() == "G")
-            station_yield = (station_good / station_total * 100) if station_total > 0 else 0
+        # 計算投入數量（所有 IN 記錄的數量總和）
+        input_qty = sum(r["qty"] for r in records["in"])
+        
+        # 計算產出良品數量（所有 OUT 記錄中狀態為 G 的數量總和）
+        output_good_qty = sum(r["qty"] for r in records["out"] if r["status"].upper() == "G")
+        
+        # 當站良率 = 產出良品數量 / 投入數量（必須有投入記錄才能計算）
+        # 如果沒有投入記錄，則不計算當站良率（避免使用產出總數作為分母）
+        if input_qty > 0 and records["out"]:  # 必須同時有投入和產出記錄
+            station_yield = (output_good_qty / input_qty * 100)
             station_yield_rates[process] = round(station_yield, 2)
+    
+    # 從 SKU 提取產品線和機種信息
+    sku = parsed['sku']
+    series_code = BarcodeParser.get_series_from_sku(sku)  # 前2碼
+    model_code = BarcodeParser.get_model_from_sku(sku)    # 後3碼
+    
+    # 從 INI 檔中查找對應的名稱
+    series_dict = config_loader.get_section_dict("series", "Series")
+    model_dict = config_loader.get_section_dict("model", "Model")
+    
+    # 查找產品線名稱（ConfigParser 會將鍵轉為小寫存儲）
+    series_name = ""
+    if series_code:
+        # ConfigParser 會將鍵轉為小寫，所以使用小寫查找
+        series_name = series_dict.get(series_code.lower(), series_code)
+    
+    # 查找機種名稱（處理前導零，例如 001 和 1）
+    model_name = ""
+    if model_code:
+        # ConfigParser 會將鍵轉為小寫，所以使用小寫查找
+        # 嘗試直接匹配
+        model_name = model_dict.get(model_code.lower(), "")
+        
+        # 如果找不到，嘗試去除前導零後匹配
+        if not model_name:
+            model_code_no_zero = model_code.lstrip('0') or '0'
+            model_name = model_dict.get(model_code_no_zero.lower(), "")
+        
+        # 如果還是找不到，使用原始代碼
+        if not model_name:
+            model_name = model_code
     
     return {
         "success": True,
         "data": {
             "order": order.upper(),
-            "sku": parsed['sku'],
+            "sku": sku,
+            "series_code": series_code,
+            "series_name": series_name,
+            "model_code": model_code,
+            "model_name": model_name,
             "station_timeline": station_timeline,
             "statistics": {
                 "total_qty": total_qty,  # 首站遷出的總數
                 "final_good_qty": final_good_qty,  # 最終站的良品數量
-                "final_bad_qty": final_bad_qty,  # 最終站的不良品數量
-                "defect_rate": round(defect_rate, 2),  # 不良率 = 不良品/總數
+                "total_defect_qty": total_defect_qty,  # 全製程不良品 = 首站投入總數 - 最終站良品數
+                "first_pass_rate": round(first_pass_rate, 2),  # 直通率 = 最終站良品數 / 首站投入總數 × 100%
                 "yield_rate": round((final_good_qty / total_qty * 100) if total_qty > 0 else 0, 2),  # 良率 = 良品/總數
+                "total_process_time": total_process_time,  # 全製程用時（累加各製程的總耗時間）
                 "station_yield_rates": station_yield_rates  # 各製程站的良率
             }
         }
@@ -804,8 +918,15 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
         "new_barcode": new_barcode_with_domain  # 使用包含 domain 的完整 URL
     }
     
-    # 使用 BackgroundTasks 寫入 Google Sheets
-    background_tasks.add_task(write_to_sheet, log_data)
+    # 同步寫入 Google Sheets（檢查是否成功）
+    write_success = sheet_service.write_log(log_data)
+    
+    if not write_success:
+        # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
+        raise HTTPException(
+            status_code=500, 
+            detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
+        )
     
     # 取得下一站建議
     next_station = get_next_station(request.series_code, request.current_station_id)
@@ -813,6 +934,7 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     # 生成 QR Code SVG（使用包含 domain 的完整 URL）
     qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
     
+    # 寫入成功，回傳成功回應
     return {
         "success": True,
         "message": "首站遷出成功",

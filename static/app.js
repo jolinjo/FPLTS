@@ -71,6 +71,9 @@ function showMainPage() {
     // 更新顯示資訊
     document.getElementById('operatorDisplay').textContent = AppState.operatorId;
     updateStationDisplay();
+    
+    // 根據當前站點顯示/隱藏首站遷出按鈕
+    updateFirstStationButtonVisibility();
 }
 
 /**
@@ -82,11 +85,12 @@ function updateStationDisplay() {
         return;
     }
     
-    // 查找對應的站點名稱
+    // 查找對應的站點名稱（統一轉換為大寫顯示）
     const process = AppState.processOptions.find(p => p.code === AppState.currentStationId);
     const stationCodeUpper = AppState.currentStationId ? AppState.currentStationId.toUpperCase() : '';
     if (process) {
-        stationDisplay.textContent = `${stationCodeUpper} - ${process.name}`;
+        const nameUpper = process.name.toUpperCase();
+        stationDisplay.textContent = `${stationCodeUpper} - ${nameUpper}`;
     } else {
         // 如果找不到，只顯示代號
         stationDisplay.textContent = stationCodeUpper;
@@ -429,14 +433,37 @@ function saveSetup() {
     // 顯示主功能頁
     showMainPage();
     
-    // 顯示成功訊息（包含站點中文名稱）
+    // 顯示成功訊息（包含站點中文名稱，統一轉換為大寫顯示）
     const process = AppState.processOptions.find(p => p.code === currentStationId);
     const stationCodeUpper = currentStationId ? currentStationId.toUpperCase() : '';
-    const stationDisplay = process ? `${stationCodeUpper} - ${process.name}` : stationCodeUpper;
+    const nameUpper = process ? process.name.toUpperCase() : '';
+    const stationDisplay = process ? `${stationCodeUpper} - ${nameUpper}` : stationCodeUpper;
     showSuccess('設定已儲存', `操作員：${operatorId}，站點：${stationDisplay}`);
     
     // 檢查是否有待處理的條碼（從 QR code 掃描）
     processPendingBarcode();
+}
+
+/**
+ * 根據當前站點更新首站遷出按鈕的顯示/隱藏
+ * 只有 P1 站才顯示首站遷出功能
+ */
+function updateFirstStationButtonVisibility() {
+    const firstBtn = document.getElementById('firstBtn');
+    if (!firstBtn) {
+        return;
+    }
+    
+    // 檢查當前站點是否為 P1
+    const isP1 = AppState.currentStationId && AppState.currentStationId.toUpperCase() === 'P1';
+    
+    if (isP1) {
+        // P1 站：顯示首站遷出按鈕
+        firstBtn.classList.remove('hidden');
+    } else {
+        // 其他站點：隱藏首站遷出按鈕
+        firstBtn.classList.add('hidden');
+    }
 }
 
 /**
@@ -492,11 +519,13 @@ function updateSeriesSelect() {
     // 保留第一個選項（請選擇產品線）
     select.innerHTML = '<option value="">請選擇產品線</option>';
     
-    // 添加所有產品線選項
+    // 添加所有產品線選項（統一轉換為大寫顯示）
     AppState.seriesOptions.forEach(series => {
         const option = document.createElement('option');
         option.value = series.code;
-        option.textContent = `${series.code} - ${series.name}`;
+        const codeUpper = series.code.toUpperCase();
+        const nameUpper = series.name.toUpperCase();
+        option.textContent = `${codeUpper} - ${nameUpper}`;
         select.appendChild(option);
     });
 }
@@ -509,11 +538,13 @@ function updateModelSelect() {
     // 保留第一個選項（請選擇機種）
     select.innerHTML = '<option value="">請選擇機種</option>';
     
-    // 添加所有機種選項
+    // 添加所有機種選項（統一轉換為大寫顯示）
     AppState.modelOptions.forEach(model => {
         const option = document.createElement('option');
         option.value = model.code;
-        option.textContent = `${model.code} - ${model.name}`;
+        const codeUpper = model.code.toUpperCase();
+        const nameUpper = model.name.toUpperCase();
+        option.textContent = `${codeUpper} - ${nameUpper}`;
         select.appendChild(option);
     });
 }
@@ -529,7 +560,9 @@ function updateContainerSelects() {
         AppState.containerOptions.forEach(container => {
             const option = document.createElement('option');
             option.value = container.code;
-            option.textContent = `${container.code} - 容量 ${container.capacity}`;
+            const codeUpper = container.code.toUpperCase();
+            const capacityUpper = container.capacity.toUpperCase();
+            option.textContent = `${codeUpper} - 容量 ${capacityUpper}`;
             outboundSelect.appendChild(option);
         });
     }
@@ -541,7 +574,9 @@ function updateContainerSelects() {
         AppState.containerOptions.forEach(container => {
             const option = document.createElement('option');
             option.value = container.code;
-            option.textContent = `${container.code} - 容量 ${container.capacity}`;
+            const codeUpper = container.code.toUpperCase();
+            const capacityUpper = container.capacity.toUpperCase();
+            option.textContent = `${codeUpper} - 容量 ${capacityUpper}`;
             firstSelect.appendChild(option);
         });
     }
@@ -559,11 +594,13 @@ function updateProcessSelect() {
     // 保留第一個選項（請選擇站點）
     select.innerHTML = '<option value="">請選擇站點</option>';
     
-    // 添加所有站點選項
+    // 添加所有站點選項（統一轉換為大寫顯示）
     AppState.processOptions.forEach(process => {
         const option = document.createElement('option');
         option.value = process.code;
-        option.textContent = `${process.code} - ${process.name}`;
+        const codeUpper = process.code.toUpperCase();
+        const nameUpper = process.name.toUpperCase();
+        option.textContent = `${codeUpper} - ${nameUpper}`;
         select.appendChild(option);
     });
     
@@ -823,8 +860,7 @@ async function handleInbound() {
         return;
     }
     
-    // 樂觀 UI：立即顯示成功（假設會成功）
-    closeBottomSheet();
+    // 不立即關閉工作表，等待 API 回應後再決定
     showSuccess('處理中...', '正在驗證流程並記錄遷入');
     
     try {
@@ -862,24 +898,53 @@ async function handleInbound() {
         }
         
         if (!response.ok) {
-            // 收到 400 錯誤（流程錯誤等）
-            throw new Error(data.detail || '遷入失敗');
+            // 檢查是否為寫入失敗錯誤（500）
+            const isWriteError = response.status === 500 && 
+                                 (data.detail && data.detail.includes('寫入 Google Sheets 失敗'));
+            
+            if (isWriteError) {
+                // 寫入失敗：不關閉工作表，顯示錯誤訊息，讓使用者可以再次提交
+                showAlert('寫入失敗', data.detail || '寫入 Google Sheets 失敗，請稍後再試', 'error');
+                playSound('error');
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200]);
+                }
+                return; // 不關閉工作表，讓使用者可以重試
+            } else {
+                // 其他錯誤（400 流程錯誤等）：關閉工作表並顯示錯誤
+                closeBottomSheet();
+                throw new Error(data.detail || '遷入失敗');
+            }
         }
         
-        // 成功：更新成功訊息
+        // 成功：關閉工作表並顯示成功訊息
+        closeBottomSheet();
         showSuccess('遷入成功', `工單：${data.data.order}，SKU：${data.data.sku}`);
         
         // 播放成功音效（如果有）
         playSound('success');
         
     } catch (error) {
-        // 錯誤：立即彈出紅色警示視窗
-        showAlert('流程錯誤', error.message, 'error');
-        playSound('error');
+        // 錯誤：檢查是否為網路錯誤（可能是寫入失敗）
+        const isNetworkError = error.message.includes('fetch') || 
+                               error.message.includes('Network') ||
+                               error.message.includes('Failed to fetch');
         
-        // 震動（如果支援）
-        if (navigator.vibrate) {
-            navigator.vibrate([200, 100, 200]);
+        if (isNetworkError) {
+            // 網路錯誤：不關閉工作表，顯示錯誤訊息
+            showAlert('網路錯誤', '無法連接到伺服器，請檢查網路連線後再試', 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        } else {
+            // 其他錯誤：關閉工作表並顯示錯誤
+            closeBottomSheet();
+            showAlert('流程錯誤', error.message, 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
         }
     }
 }
@@ -899,8 +964,7 @@ async function handleOutbound() {
         return;
     }
     
-    // 樂觀 UI
-    closeBottomSheet();
+    // 不立即關閉工作表，等待 API 回應後再決定
     showSuccess('處理中...', '正在生成新條碼並記錄遷出');
     
     try {
@@ -923,10 +987,27 @@ async function handleOutbound() {
         const data = await response.json();
         
         if (!response.ok) {
-            throw new Error(data.detail || '遷出失敗');
+            // 檢查是否為寫入失敗錯誤（500）
+            const isWriteError = response.status === 500 && 
+                                 (data.detail && data.detail.includes('寫入 Google Sheets 失敗'));
+            
+            if (isWriteError) {
+                // 寫入失敗：不關閉工作表，顯示錯誤訊息，讓使用者可以再次提交
+                showAlert('寫入失敗', data.detail || '寫入 Google Sheets 失敗，請稍後再試', 'error');
+                playSound('error');
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200]);
+                }
+                return; // 不關閉工作表，讓使用者可以重試
+            } else {
+                // 其他錯誤：關閉工作表並顯示錯誤
+                closeBottomSheet();
+                throw new Error(data.detail || '遷出失敗');
+            }
         }
         
-        // 成功：顯示新條碼和下一站建議
+        // 成功：關閉工作表並顯示成功訊息
+        closeBottomSheet();
         let detail = `新條碼：${data.data.new_barcode}`;
         if (data.data.next_station) {
             detail += `\n下一站建議：${data.data.next_station}`;
@@ -941,10 +1022,26 @@ async function handleOutbound() {
         playSound('success');
         
     } catch (error) {
-        showAlert('錯誤', error.message, 'error');
-        playSound('error');
-        if (navigator.vibrate) {
-            navigator.vibrate([200, 100, 200]);
+        // 檢查是否為網路錯誤（可能是寫入失敗）
+        const isNetworkError = error.message.includes('fetch') || 
+                               error.message.includes('Network') ||
+                               error.message.includes('Failed to fetch');
+        
+        if (isNetworkError) {
+            // 網路錯誤：不關閉工作表，顯示錯誤訊息
+            showAlert('網路錯誤', '無法連接到伺服器，請檢查網路連線後再試', 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        } else {
+            // 其他錯誤：關閉工作表並顯示錯誤
+            closeBottomSheet();
+            showAlert('錯誤', error.message, 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
         }
     }
 }
@@ -1001,15 +1098,23 @@ function showTracePage(traceData) {
     
     // 設置標題
     traceOrderTitle.textContent = `工單：${traceData.order}`;
-    traceSkuInfo.textContent = `SKU：${traceData.sku}`;
+    
+    // 顯示產品線和型號信息
+    if (traceData.series_code && traceData.model_code) {
+        const seriesName = traceData.series_name || traceData.series_code;
+        const modelName = traceData.model_name || traceData.model_code;
+        traceSkuInfo.textContent = `${traceData.series_code} - ${traceData.model_code} | ${seriesName} - ${modelName}`;
+    } else {
+        traceSkuInfo.textContent = `SKU：${traceData.sku || ''}`;
+    }
     
     // 清空內容
     traceContent.innerHTML = '';
     
-    // 獲取製程站點名稱映射
+    // 獲取製程站點名稱映射（統一轉換為大寫）
     const processNameMap = {};
     AppState.processOptions.forEach(p => {
-        processNameMap[p.code.toUpperCase()] = p.name;
+        processNameMap[p.code.toUpperCase()] = p.name.toUpperCase();
     });
     
     // 顯示統計信息（根據新的邏輯）
@@ -1017,7 +1122,7 @@ function showTracePage(traceData) {
     const statsCard = document.createElement('div');
     statsCard.className = 'card glass p-4 mb-4 bg-blue-50 border-2 border-blue-200';
     statsCard.innerHTML = `
-        <div class="grid grid-cols-4 gap-4 text-center mb-4">
+        <div class="grid grid-cols-3 gap-4 text-center mb-4">
             <div>
                 <p class="text-sm text-gray-600">總數量</p>
                 <p class="text-xl font-bold text-gray-900">${stats.total_qty || 0}</p>
@@ -1028,17 +1133,19 @@ function showTracePage(traceData) {
                 <p class="text-xl font-bold text-green-600">${stats.final_good_qty || 0}</p>
             </div>
             <div>
-                <p class="text-sm text-gray-600">最終站不良品</p>
-                <p class="text-xl font-bold text-red-600">${stats.final_bad_qty || 0}</p>
-            </div>
-            <div>
-                <p class="text-sm text-gray-600">不良率</p>
-                <p class="text-xl font-bold text-red-600">${stats.defect_rate || 0}%</p>
+                <p class="text-sm text-gray-600">全製程不良品</p>
+                <p class="text-xl font-bold text-red-600">${stats.total_defect_qty || 0}</p>
             </div>
         </div>
-        <div class="text-center pt-2 border-t border-blue-300">
-            <p class="text-sm text-gray-600">良率</p>
-            <p class="text-2xl font-bold text-blue-600">${stats.yield_rate || 0}%</p>
+        <div class="grid grid-cols-2 gap-4 pt-2 border-t border-blue-300">
+            <div class="text-center">
+                <p class="text-sm text-gray-600">直通率</p>
+                <p class="text-2xl font-bold text-blue-600">${stats.first_pass_rate || 0}%</p>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-600">全製程用時</p>
+                <p class="text-2xl font-bold text-purple-600">${stats.total_process_time || '00:00:00'}</p>
+            </div>
         </div>
     `;
     traceContent.appendChild(statsCard);
@@ -1049,8 +1156,9 @@ function showTracePage(traceData) {
             const stationCard = document.createElement('div');
             stationCard.className = 'trace-station-card';
             
-            const processName = processNameMap[station.process] || station.process;
-            const stationTitle = `${station.process} - ${processName}`;
+            const processName = processNameMap[station.process] || station.process.toUpperCase();
+            const processCodeUpper = station.process.toUpperCase();
+            const stationTitle = `${processCodeUpper} - ${processName}`;
             
             let html = `
                 <div class="trace-station-header">${stationTitle}</div>
@@ -1086,13 +1194,25 @@ function showTracePage(traceData) {
             html += `
                 <div class="trace-info-row">
                     <span class="trace-info-label">投入數量</span>
-                    <span class="trace-info-value">${station.input_qty}</span>
-                </div>
-                <div class="trace-info-row">
-                    <span class="trace-info-label">產出數量</span>
-                    <span class="trace-info-value">${station.output_qty}</span>
+                    <span class="trace-info-value">${station.input_qty || 0}</span>
                 </div>
             `;
+            
+            // 顯示產出良品和不良品詳細信息（如果有）
+            if (station.output_good_qty !== undefined || station.output_bad_qty !== undefined) {
+                const goodQty = station.output_good_qty || 0;
+                const badQty = station.output_bad_qty || 0;
+                html += `
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">產出良品</span>
+                        <span class="trace-info-value text-green-600">${goodQty}</span>
+                    </div>
+                    <div class="trace-info-row">
+                        <span class="trace-info-label">產出不良品</span>
+                        <span class="trace-info-value text-red-600">${badQty}</span>
+                    </div>
+                `;
+            }
             
             // 顯示該站的良率（如果有遷出記錄）
             if (traceData.statistics.station_yield_rates && traceData.statistics.station_yield_rates[station.process]) {
@@ -1143,7 +1263,7 @@ async function handleFirst() {
         return;
     }
     
-    closeBottomSheet();
+    // 不立即關閉工作表，等待 API 回應後再決定
     showSuccess('處理中...', '正在生成首站條碼');
     
     try {
@@ -1168,10 +1288,27 @@ async function handleFirst() {
         const data = await response.json();
         
         if (!response.ok) {
-            throw new Error(data.detail || '首站遷出失敗');
+            // 檢查是否為寫入失敗錯誤（500）
+            const isWriteError = response.status === 500 && 
+                                 (data.detail && data.detail.includes('寫入 Google Sheets 失敗'));
+            
+            if (isWriteError) {
+                // 寫入失敗：不關閉工作表，顯示錯誤訊息，讓使用者可以再次提交
+                showAlert('寫入失敗', data.detail || '寫入 Google Sheets 失敗，請稍後再試', 'error');
+                playSound('error');
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200]);
+                }
+                return; // 不關閉工作表，讓使用者可以重試
+            } else {
+                // 其他錯誤：關閉工作表並顯示錯誤
+                closeBottomSheet();
+                throw new Error(data.detail || '首站遷出失敗');
+            }
         }
         
-        // 成功：顯示新條碼
+        // 成功：關閉工作表並顯示成功訊息
+        closeBottomSheet();
         let detail = `新條碼：${data.data.barcode}`;
         if (data.data.sku) {
             detail += `\nSKU：${data.data.sku}`;
@@ -1189,10 +1326,26 @@ async function handleFirst() {
         playSound('success');
         
     } catch (error) {
-        showAlert('錯誤', error.message, 'error');
-        playSound('error');
-        if (navigator.vibrate) {
-            navigator.vibrate([200, 100, 200]);
+        // 檢查是否為網路錯誤（可能是寫入失敗）
+        const isNetworkError = error.message.includes('fetch') || 
+                               error.message.includes('Network') ||
+                               error.message.includes('Failed to fetch');
+        
+        if (isNetworkError) {
+            // 網路錯誤：不關閉工作表，顯示錯誤訊息
+            showAlert('網路錯誤', '無法連接到伺服器，請檢查網路連線後再試', 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        } else {
+            // 其他錯誤：關閉工作表並顯示錯誤
+            closeBottomSheet();
+            showAlert('錯誤', error.message, 'error');
+            playSound('error');
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
         }
     }
 }

@@ -157,28 +157,39 @@ class SheetService:
                 elif i < len(COLUMNS):
                     header_to_column[header] = COLUMNS[i]
             
+            # 定義需要轉換為大寫的欄位（字串欄位）
+            uppercase_fields = {"action", "operator", "order", "process", "sku", "container", 
+                              "box_seq", "status", "scanned_barcode", "new_barcode"}
+            
             # 準備資料列（按照 Sheet 中的實際欄位順序）
             row_data = []
             for header in headers:
                 # 找到對應的欄位名
                 column_name = header_to_column.get(header, None)
-                if column_name:
-                    value = log_data.get(column_name, "")
-                else:
+                if not column_name:
                     # 如果找不到對應的欄位，嘗試直接從標題提取
                     if "(" in header:
                         column_name = header.split("(")[0].strip()
-                        value = log_data.get(column_name, "")
                     else:
-                        value = ""
+                        column_name = header.strip()
                 
-                # 轉換為字串
+                # 取得值
+                if column_name:
+                    value = log_data.get(column_name, "")
+                else:
+                    value = ""
+                
+                # 轉換為字串並統一轉換為大寫（如果是需要轉換的欄位）
                 if value is None:
                     value = ""
                 elif isinstance(value, datetime):
                     value = value.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     value = str(value)
+                    # 如果是需要轉換為大寫的欄位，統一轉換
+                    if column_name and column_name in uppercase_fields:
+                        value = value.upper()
+                
                 row_data.append(value)
             
             # 追加到工作表
@@ -463,8 +474,16 @@ class SheetService:
                 print(f"讀取記錄時發生錯誤：{e}")
                 return []
             
-            # 過濾出符合工單號的記錄
-            filtered = [record for record in records if record.get("order") == order]
+            # 過濾出符合工單號的記錄（不區分大小寫，去除前導零）
+            order_normalized = order.upper().lstrip('0') or '0'  # 標準化工單號
+            filtered = []
+            for record in records:
+                record_order = record.get("order", "").strip()
+                if record_order:
+                    # 標準化記錄中的工單號（轉大寫，去除前導零）
+                    record_order_normalized = record_order.upper().lstrip('0') or '0'
+                    if record_order_normalized == order_normalized:
+                        filtered.append(record)
             
             # 限制筆數
             return filtered[:limit]
