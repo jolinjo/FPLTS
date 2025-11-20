@@ -15,6 +15,8 @@ from services.flow_validator import validate_process_flow, get_next_station
 from services.sheet import sheet_service
 from services.config_loader import config_loader
 from services.qrcode_generator import QRCodeGenerator
+import re
+import math
 
 load_dotenv()
 
@@ -32,13 +34,23 @@ class InboundRequest(BaseModel):
     barcode: str
     operator_id: str
     current_station_id: str
+    selected_barcodes: Optional[list] = None  # 批量遷入時選中的條碼列表
 
+
+class OutboundItemRequest(BaseModel):
+    """遷出單項請求模型（良品或不良品）"""
+    qty: str
+    container: str
+    status: str
 
 class OutboundRequest(BaseModel):
     """遷出請求模型"""
     barcode: str
     operator_id: str
     current_station_id: str
+    good_items: Optional[OutboundItemRequest] = None  # 良品項目
+    bad_items: Optional[OutboundItemRequest] = None  # 不良品項目
+    # 向後兼容的舊欄位（已棄用，但保留以支持舊版本）
     container: Optional[str] = None
     box_seq: Optional[str] = None
     status: Optional[str] = None
@@ -58,13 +70,15 @@ class CheckBarcodeRequest(BaseModel):
 
 class FirstStationRequest(BaseModel):
     """首站遷出請求模型"""
+    model_config = {"protected_namespaces": ()}  # 禁用保護命名空間檢查，允許使用 model_code
+    
     order: str
     operator_id: str
     current_station_id: str
     series_code: str  # 產品線代號（例如：AC, ST）
     model_code: str   # 機種代號（例如：350, 351）
     container: str
-    box_seq: str
+    box_seq: Optional[str] = None  # 箱號（可選，由系統自動計算）
     status: str
     qty: str
 
@@ -92,6 +106,24 @@ async def redirect_barcode_path(barcode: str):
     """
     # 重定向到正確的查詢參數格式
     return RedirectResponse(url=f"/?b={barcode}", status_code=302)
+
+
+@app.get("/api/scan/previous-barcodes")
+async def get_previous_station_barcodes_api(order: str, current_station_id: str):
+    """
+    查詢相同工單的上一站條碼（OUT 記錄）
+    
+    用於遷入時顯示可選擇的條碼列表
+    """
+    if not order or not current_station_id:
+        raise HTTPException(status_code=400, detail="工單號和當前站點不能為空")
+    
+    barcodes = sheet_service.get_previous_station_barcodes(order, current_station_id)
+    
+    return {
+        "success": True,
+        "data": barcodes
+    }
 
 
 @app.post("/api/scan/check")
@@ -181,11 +213,29 @@ async def check_barcode(request: CheckBarcodeRequest):
                 }
             }
     
+    # ========== 特殊處理：本站條碼（無論是否有記錄，都只允許查詢）==========
+    if barcode_order == current_order:
+        # 本站條碼 → 只允許查詢（不能在本站掃到本站條碼時進行遷入或遷出）
+        return {
+            "success": True,
+            "suggested_action": "trace",
+            "message": f"檢測到 {barcode_process} 製程條碼（本站），只能進行查詢",
+            "data": {
+                "barcode": request.barcode,
+                "order": parsed['order'].upper(),
+                "process": process_code,
+                "sku": parsed['sku']
+            }
+        }
+    
     # ========== 第三優先級：檢查當前站點是否有遷入記錄 ==========
+    print(f"[check_barcode] 檢查條碼 {request.barcode} 在站點 {current_station} 是否有遷入記錄...")
     has_in_at_current = sheet_service.has_inbound_record_at_station(request.barcode, current_station)
+    print(f"[check_barcode] 遷入記錄檢查結果：{has_in_at_current}")
     
     if has_in_at_current:
         # 當前站點已有遷入記錄 → 必須先遷出
+        print(f"[check_barcode] 返回建議操作：outbound（已有遷入記錄）")
         return {
             "success": True,
             "suggested_action": "outbound",
@@ -229,25 +279,12 @@ async def check_barcode(request: CheckBarcodeRequest):
                 "sku": parsed['sku']
             }
         }
-    elif barcode_order == current_order:
-        # 本站條碼 → 建議遷入（可能是異常情況）
-        return {
-            "success": True,
-            "suggested_action": "inbound",
-            "message": f"檢測到 {barcode_process} 製程條碼（本站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
-            "data": {
-                "barcode": request.barcode,
-                "order": parsed['order'].upper(),
-                "process": process_code,
-                "sku": parsed['sku']
-            }
-        }
     else:
-        # 下一站條碼 → 建議遷入（可能是跳站異常）
+        # 下一站條碼 → 只允許查詢（不能掃到下一站條碼時進行遷入，可能是異常情況）
         return {
             "success": True,
-            "suggested_action": "inbound",
-            "message": f"檢測到 {barcode_process} 製程條碼（下一站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
+            "suggested_action": "trace",
+            "message": f"檢測到 {barcode_process} 製程條碼（下一站），在 {current_station} 站點沒有記錄，只能進行查詢",
             "data": {
                 "barcode": request.barcode,
                 "order": parsed['order'].upper(),
@@ -299,6 +336,24 @@ async def get_model_options():
     }
 
 
+def parse_container_capacity(container_name: str) -> int:
+    """
+    從容器名稱中解析容量數字
+    
+    例如："100的紙箱" -> 100
+         "200的紙箱" -> 200
+         "自訂" -> 0（表示需要手動輸入）
+    """
+    if not container_name or container_name == "自訂":
+        return 0
+    
+    # 使用正則表達式提取數字
+    match = re.search(r'(\d+)', container_name)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
 @app.get("/api/config/containers")
 async def get_container_options():
     """
@@ -308,15 +363,81 @@ async def get_container_options():
     """
     container_dict = config_loader.get_section_dict("container", "Container")
     
-    # 轉換為列表格式，包含代號和容量
-    container_list = [
-        {"code": code, "capacity": name}
-        for code, name in container_dict.items()
-    ]
+    # 轉換為列表格式，包含代號、名稱和容量
+    container_list = []
+    for code, name in container_dict.items():
+        capacity = parse_container_capacity(name)
+        container_list.append({
+            "code": code,
+            "name": name,
+            "capacity": capacity
+        })
     
     return {
         "success": True,
         "data": container_list
+    }
+
+
+@app.get("/api/config/status")
+async def get_status_options():
+    """
+    取得貨態配置選項列表
+    
+    返回所有可用的貨態（Status）選項
+    """
+    status_dict = config_loader.get_section_dict("status", "Status")
+    
+    # 轉換為列表格式，包含代號和名稱
+    status_list = [
+        {"code": code.upper(), "name": name}
+        for code, name in status_dict.items()
+    ]
+    
+    return {
+        "success": True,
+        "data": status_list
+    }
+
+
+@app.get("/api/scan/inbound-quantity")
+async def get_inbound_quantity(order: str, station_id: str):
+    """
+    查詢指定工單在指定站點的遷入總數量
+    
+    Args:
+        order: 工單號
+        station_id: 站點代號（例如：P1, P2）
+    
+    Returns:
+        該工單在該站點的遷入總數量
+    """
+    # 查詢該工單的所有記錄
+    logs = sheet_service.get_logs_by_order(order, limit=1000)
+    
+    # 過濾出該站點的 IN 記錄
+    total_qty = 0
+    station_id_upper = station_id.upper()
+    
+    for log in logs:
+        action = str(log.get("action", "")).strip().upper()
+        process = str(log.get("process", "")).strip().upper()
+        qty_str = str(log.get("qty", "")).strip()
+        
+        if action == "IN" and process == station_id_upper and qty_str:
+            try:
+                qty = int(qty_str)
+                total_qty += qty
+            except ValueError:
+                continue
+    
+    return {
+        "success": True,
+        "data": {
+            "order": order.upper(),
+            "station_id": station_id_upper,
+            "total_inbound_qty": total_qty
+        }
     }
 
 
@@ -416,56 +537,146 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
     # 計算工時（遷入時工時為 0）
     cycle_time = 0
     
-    # 準備記錄資料（工單號和站點轉換為大寫）
-    log_data = {
-        "timestamp": datetime.now(),
-        "action": "IN",
-        "operator": request.operator_id,
-        "order": parsed['order'].upper(),
-        "process": curr_station.upper(),
-        "sku": sku,
-        "container": parsed['container'],
-        "box_seq": parsed['box_seq'],
-        "qty": parsed['qty'],
-        "status": parsed['status'],
-        "cycle_time": cycle_time,
-        "scanned_barcode": request.barcode,
-        "new_barcode": ""
-    }
+    # 處理批量遷入
+    barcodes_to_process = []
+    if request.selected_barcodes and len(request.selected_barcodes) > 0:
+        # 批量遷入：使用選中的條碼列表
+        barcodes_to_process = request.selected_barcodes
+        print(f"[批量遷入] 收到 {len(barcodes_to_process)} 個條碼：{barcodes_to_process}")
+    else:
+        # 單個遷入：使用掃描的條碼
+        barcodes_to_process = [request.barcode]
+        print(f"[單個遷入] 條碼：{request.barcode}")
     
-    # 同步寫入 Google Sheets（檢查是否成功）
-    write_success = sheet_service.write_log(log_data)
+    # 批量處理：先驗證所有條碼，然後批量寫入
+    valid_logs = []  # 有效的記錄資料列表
+    failed_barcodes = []
     
-    if not write_success:
-        # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
+    # 批量檢查所有條碼的 IN 記錄狀態（一次性 API 調用）
+    print(f"[批量遷入] 批量檢查 {len(barcodes_to_process)} 個條碼的遷入記錄狀態")
+    inbound_status = sheet_service.batch_check_inbound_records(barcodes_to_process, curr_station)
+    
+    for idx, barcode_to_process in enumerate(barcodes_to_process):
+        print(f"[批量遷入] 處理第 {idx + 1}/{len(barcodes_to_process)} 個條碼：{barcode_to_process}")
+        # 解析條碼
+        parsed_barcode = BarcodeParser.parse(barcode_to_process)
+        if not parsed_barcode:
+            failed_barcodes.append(barcode_to_process)
+            continue
+        
+        # 驗證 CRC16 校驗碼
+        if not CRC16.verify(barcode_to_process):
+            failed_barcodes.append(barcode_to_process)
+            continue
+        
+        # 檢查該條碼在當前站點是否已有 IN 記錄（使用批量檢查結果）
+        if inbound_status.get(barcode_to_process, False):
+            failed_barcodes.append(barcode_to_process)
+            continue
+        
+        # 取得該條碼的 SKU 和上一站（用於流程驗證）
+        barcode_sku = parsed_barcode['sku']
+        barcode_prev_station = parsed_barcode['process']
+        
+        # 流程驗證（只對第一個條碼或主要條碼進行驗證，其他條碼假設已經驗證過）
+        if barcode_to_process == request.barcode:
+            # 主要條碼：進行完整驗證
+            series = BarcodeParser.get_series_from_sku(barcode_sku)
+            is_valid, error_message = validate_process_flow(series, barcode_prev_station, curr_station)
+            if not is_valid:
+                failed_barcodes.append(barcode_to_process)
+                continue
+        else:
+            # 其他條碼：簡單驗證（確保是上一站條碼）
+            station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
+            barcode_order = station_order.get(barcode_prev_station.upper(), 999)
+            current_order = station_order.get(curr_station.upper(), 999)
+            if barcode_order >= current_order:
+                # 不是上一站條碼，跳過
+                failed_barcodes.append(barcode_to_process)
+                continue
+        
+        # 準備記錄資料（工單號和站點轉換為大寫）
+        log_data = {
+            "timestamp": datetime.now(),
+            "action": "IN",
+            "operator": request.operator_id,
+            "order": parsed_barcode['order'].upper(),
+            "process": curr_station.upper(),
+            "sku": barcode_sku,
+            "container": parsed_barcode['container'],
+            "box_seq": parsed_barcode['box_seq'],
+            "qty": parsed_barcode['qty'],
+            "status": parsed_barcode['status'],
+            "cycle_time": cycle_time,
+            "scanned_barcode": barcode_to_process,
+            "new_barcode": ""
+        }
+        
+        valid_logs.append(log_data)
+        print(f"[批量遷入] ✓ 條碼 {barcode_to_process} 驗證通過，準備批量寫入")
+    
+    # 批量寫入所有有效記錄（一次性 API 調用）
+    if valid_logs:
+        print(f"[批量遷入] 準備批量寫入 {len(valid_logs)} 筆記錄")
+        success_count, failed_indices = sheet_service.write_logs_batch(valid_logs)
+        if failed_indices:
+            # 如果有失敗的記錄，記錄對應的條碼
+            for idx in failed_indices:
+                if idx < len(valid_logs):
+                    failed_barcodes.append(valid_logs[idx].get('scanned_barcode', ''))
+    else:
+        success_count = 0
+    
+    # 檢查寫入結果
+    if success_count == 0:
+        # 全部失敗
         raise HTTPException(
             status_code=500, 
             detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
         )
-    
-    # 寫入成功，回傳成功回應
-    return {
-        "success": True,
-        "message": "遷入成功",
-        "data": {
-            "order": parsed['order'].upper(),
-            "sku": sku,
-            "current_station": curr_station.upper(),
-            "prev_station": prev_station.upper()
+    elif len(failed_barcodes) > 0:
+        # 部分失敗
+        return {
+            "success": True,
+            "message": f"遷入完成：成功 {success_count} 筆，失敗 {len(failed_barcodes)} 筆",
+            "data": {
+                "order": parsed['order'].upper(),
+                "sku": sku,
+                "current_station": curr_station.upper(),
+                "prev_station": prev_station.upper(),
+                "success_count": success_count,
+                "failed_count": len(failed_barcodes),
+                "failed_barcodes": failed_barcodes
+            }
         }
-    }
+    else:
+        # 全部成功
+        return {
+            "success": True,
+            "message": f"遷入成功（共 {success_count} 筆）",
+            "data": {
+                "order": parsed['order'].upper(),
+                "sku": sku,
+                "current_station": curr_station.upper(),
+                "prev_station": prev_station.upper(),
+                "success_count": success_count
+            }
+        }
 
 
 @app.post("/api/scan/outbound")
-async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTasks):
+async def scan_outbound(request: OutboundRequest):
     """
-    貨物遷出 API
+    貨物遷出 API（支持同時處理良品和不良品）
     
     邏輯：
     1. 解析舊條碼
-    2. 生成新條碼（更新製程代號）
-    3. 計算工時
-    4. 寫入 Google Sheets
+    2. 處理良品和不良品（如果都有）
+    3. 根據容器容量和數量自動計算需要幾個箱子（分別計算）
+    4. 為每個箱子生成新條碼（更新製程代號、箱號、數量、貨態）
+    5. 計算工時
+    6. 寫入 Google Sheets（每個箱子一筆記錄）
     """
     # 解析舊條碼
     parsed = BarcodeParser.parse(request.barcode)
@@ -476,79 +687,187 @@ async def scan_outbound(request: OutboundRequest, background_tasks: BackgroundTa
     if not CRC16.verify(request.barcode):
         raise HTTPException(status_code=400, detail="條碼校驗碼錯誤")
     
-    # 生成新條碼
-    new_barcode = BarcodeGenerator.generate_from_previous(
-        previous_barcode=request.barcode,
-        new_process=request.current_station_id,
-        new_container=request.container,
-        new_box_seq=request.box_seq,
-        new_status=request.status,
-        new_qty=request.qty
-    )
+    # 檢查是否有良品或不良品項目
+    has_good = request.good_items is not None
+    has_bad = request.bad_items is not None
     
-    if not new_barcode:
-        raise HTTPException(status_code=500, detail="生成新條碼失敗")
+    # 向後兼容：如果使用舊格式（qty, container, status），轉換為新格式
+    if not has_good and not has_bad:
+        if request.qty and request.container:
+            # 使用舊格式，轉換為新格式
+            if request.status == 'N':
+                request.bad_items = OutboundItemRequest(
+                    qty=request.qty,
+                    container=request.container,
+                    status='N'
+                )
+                has_bad = True
+            else:
+                request.good_items = OutboundItemRequest(
+                    qty=request.qty,
+                    container=request.container,
+                    status=request.status or 'G'
+                )
+                has_good = True
     
-    # 計算工時（這裡簡化處理，實際應從遷入時間計算）
-    # TODO: 從 Google Sheets 查詢上次遷入時間來計算實際工時
-    cycle_time = 0
+    if not has_good and not has_bad:
+        raise HTTPException(status_code=400, detail="請至少提供良品或不良品的數量和容器")
     
-    # 取得 domain 設定，並組合成完整的條碼 URL
+    # 取得 domain 設定
     domain = config_loader.get_value("settings", "Settings", "domain", "")
     if domain:
-        # 移除 domain 末尾的斜線（如果有的話）
         domain = domain.rstrip('/')
-        # 組合成完整 URL：domain/b=條碼
-        new_barcode_with_domain = f"{domain}/b={new_barcode}"
-    else:
-        # 如果沒有設定 domain，只使用條碼
-        new_barcode_with_domain = new_barcode
     
-    # 準備記錄資料（工單號和站點轉換為大寫）
-    log_data = {
-        "timestamp": datetime.now(),
-        "action": "OUT",
-        "operator": request.operator_id,
-        "order": parsed['order'].upper(),
-        "process": request.current_station_id.upper(),
-        "sku": parsed['sku'],
-        "container": request.container or parsed['container'],
-        "box_seq": request.box_seq or parsed['box_seq'],
-        "qty": request.qty or parsed['qty'],
-        "status": request.status or parsed['status'],
-        "cycle_time": cycle_time,
-        "scanned_barcode": request.barcode,
-        "new_barcode": new_barcode_with_domain
-    }
+    # 取得容器配置
+    container_dict = config_loader.get_section_dict("container", "Container")
     
-    # 同步寫入 Google Sheets（檢查是否成功）
-    write_success = sheet_service.write_log(log_data)
+    # 計算工時（這裡簡化處理，實際應從遷入時間計算）
+    cycle_time = 0
     
-    if not write_success:
-        # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
-        raise HTTPException(
-            status_code=500, 
-            detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
-        )
+    # 處理良品和不良品
+    all_boxes = []  # 所有箱子的資訊（良品 + 不良品）
+    total_boxes = 0
+    total_qty = 0
+    
+    def process_items(items, item_type: str):
+        """處理一組項目（良品或不良品），生成所有箱子"""
+        if not items:
+            return []
+        
+        qty = int(items.qty or 0)
+        if qty <= 0:
+            return []
+        
+        container_code = items.container
+        status = items.status
+        
+        # 取得容器容量
+        container_name = container_dict.get(container_code.lower(), "")
+        if not container_name:
+            raise HTTPException(status_code=400, detail=f"找不到容器 {container_code} 的設定，請檢查容器代號是否正確")
+        
+        container_capacity = parse_container_capacity(container_name)
+        if container_capacity <= 0:
+            raise HTTPException(status_code=400, detail=f"容器 {container_code} ({container_name}) 的容量設定無效或為自訂，無法自動計算箱子數量")
+        
+        # 計算需要幾個箱子
+        num_boxes = math.ceil(qty / container_capacity)
+        
+        # 計算每個箱子的數量
+        boxes = []
+        remaining_qty = qty
+        
+        for box_num in range(1, num_boxes + 1):
+            if box_num == num_boxes:
+                # 最後一箱：包含所有剩餘數量（尾數）
+                box_qty = remaining_qty
+            else:
+                # 其他箱子：使用容器容量
+                box_qty = container_capacity
+                remaining_qty -= container_capacity
+            
+            # 生成箱號（01, 02, 03...）
+            box_seq = str(box_num).zfill(2)
+            
+            # 生成新條碼
+            new_barcode = BarcodeGenerator.generate_from_previous(
+                previous_barcode=request.barcode,
+                new_process=request.current_station_id,
+                new_container=container_code,
+                new_box_seq=box_seq,
+                new_status=status,
+                new_qty=str(box_qty).zfill(4)
+            )
+            
+            if not new_barcode:
+                raise HTTPException(status_code=500, detail=f"生成{item_type}第 {box_num} 箱條碼失敗")
+            
+            # 組合成完整的條碼 URL
+            if domain:
+                new_barcode_with_domain = f"{domain}/b={new_barcode}"
+            else:
+                new_barcode_with_domain = new_barcode
+            
+            # 生成 QR Code SVG
+            qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
+            
+            boxes.append({
+                "box_num": box_num,
+                "box_seq": box_seq,
+                "qty": box_qty,
+                "status": status,
+                "container": container_code,
+                "item_type": item_type,  # "良品" 或 "不良品"
+                "barcode": new_barcode,
+                "barcode_url": new_barcode_with_domain,
+                "qr_code_svg": qr_svg
+            })
+        
+        return boxes
+    
+    # 處理良品
+    good_boxes = []
+    if has_good:
+        good_boxes = process_items(request.good_items, "良品")
+        all_boxes.extend(good_boxes)
+        total_boxes += len(good_boxes)
+        total_qty += int(request.good_items.qty)
+    
+    # 處理不良品
+    bad_boxes = []
+    if has_bad:
+        bad_boxes = process_items(request.bad_items, "不良品")
+        all_boxes.extend(bad_boxes)
+        total_boxes += len(bad_boxes)
+        total_qty += int(request.bad_items.qty)
+    
+    # 為每個箱子寫入 Google Sheets
+    all_logs = []
+    for box in all_boxes:
+        log_data = {
+            "timestamp": datetime.now(),
+            "action": "OUT",
+            "operator": request.operator_id,
+            "order": parsed['order'].upper(),
+            "process": request.current_station_id.upper(),
+            "sku": parsed['sku'],
+            "container": box["container"],
+            "box_seq": box["box_seq"],
+            "qty": str(box["qty"]).zfill(4),
+            "status": box["status"],
+            "cycle_time": cycle_time,
+            "scanned_barcode": request.barcode,
+            "new_barcode": box["barcode_url"]
+        }
+        all_logs.append(log_data)
+    
+    # 批量寫入 Google Sheets
+    if all_logs:
+        success_count, failed_indices = sheet_service.write_logs_batch(all_logs)
+        if success_count < len(all_logs):
+            # 部分或全部寫入失敗
+            raise HTTPException(
+                status_code=500, 
+                detail=f"寫入 Google Sheets 失敗（成功 {success_count}/{len(all_logs)} 筆），請檢查網路連線或 Google Sheets 設定，稍後再試"
+            )
     
     # 取得下一站建議
     series = BarcodeParser.get_series_from_sku(parsed['sku'])
     next_station = get_next_station(series, request.current_station_id)
-    
-    # 生成 QR Code SVG（使用包含 domain 的完整 URL）
-    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
     
     # 寫入成功，回傳成功回應
     return {
         "success": True,
         "message": "遷出成功",
         "data": {
-            "new_barcode": new_barcode,  # 返回原始條碼（不含 domain）
-            "new_barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
+            "total_boxes": total_boxes,
+            "total_qty": total_qty,
+            "good_boxes": len(good_boxes),
+            "bad_boxes": len(bad_boxes),
             "order": parsed['order'].upper(),
             "current_station": request.current_station_id.upper(),
             "next_station": next_station.upper() if next_station else None,
-            "qr_code_svg": qr_svg
+            "boxes": all_boxes  # 所有箱子的資訊（良品 + 不良品）
         }
     }
 
@@ -860,6 +1179,7 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     
     手動輸入工單資訊，生成第一個條碼
     從產品線代號和機種代號自動組合成 SKU
+    根據容器容量和總數量自動計算需要幾個箱子（邏輯與遷出一樣）
     """
     # 驗證產品線代號是否存在（ConfigParser 會將鍵轉為小寫）
     series_dict = config_loader.get_section_dict("series", "Series")
@@ -879,49 +1199,111 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     # 工單號轉換為大寫
     order_upper = request.order.upper()
     
-    # 生成第一個條碼
-    barcode = BarcodeGenerator.generate(
-        order=order_upper,
-        process=request.current_station_id,
-        sku=sku,
-        container=request.container,
-        box_seq=request.box_seq,
-        status=request.status,
-        qty=request.qty
-    )
+    # 取得總數量
+    total_qty = int(request.qty or 0)
+    if total_qty <= 0:
+        raise HTTPException(status_code=400, detail="數量必須大於 0")
     
-    # 取得 domain 設定，並組合成完整的條碼 URL
-    domain = config_loader.get_value("settings", "Settings", "domain", "")
-    if domain:
-        # 移除 domain 末尾的斜線（如果有的話）
-        domain = domain.rstrip('/')
-        # 組合成完整 URL：domain/b=條碼
-        new_barcode_with_domain = f"{domain}/b={barcode}"
-    else:
-        # 如果沒有設定 domain，只使用條碼
-        new_barcode_with_domain = barcode
+    # 取得容器代號
+    container_code = request.container
+    if not container_code:
+        raise HTTPException(status_code=400, detail="請選擇容器")
     
-    # 準備記錄資料（工單號和站點轉換為大寫）
-    log_data = {
-        "timestamp": datetime.now(),
-        "action": "OUT",
-        "operator": request.operator_id,
-        "order": order_upper,
-        "process": request.current_station_id.upper(),
-        "sku": sku,
-        "container": request.container,
-        "box_seq": request.box_seq,
-        "qty": request.qty,
-        "status": request.status,
-        "cycle_time": 0,
-        "scanned_barcode": "",
-        "new_barcode": new_barcode_with_domain  # 使用包含 domain 的完整 URL
-    }
+    # 取得容器容量
+    container_dict = config_loader.get_section_dict("container", "Container")
+    # ConfigParser 會將鍵轉為小寫，所以使用小寫查找
+    container_name = container_dict.get(container_code.lower(), "")
     
-    # 同步寫入 Google Sheets（檢查是否成功）
-    write_success = sheet_service.write_log(log_data)
+    if not container_name:
+        raise HTTPException(status_code=400, detail=f"找不到容器 {container_code} 的設定，請檢查容器代號是否正確")
     
-    if not write_success:
+    container_capacity = parse_container_capacity(container_name)
+    
+    if container_capacity <= 0:
+        raise HTTPException(status_code=400, detail=f"容器 {container_code} ({container_name}) 的容量設定無效或為自訂，無法自動計算箱子數量")
+    
+    # 計算需要幾個箱子
+    # 尾數統一放在最後一箱
+    num_boxes = math.ceil(total_qty / container_capacity)
+    
+    # 計算每個箱子的數量
+    boxes = []
+    remaining_qty = total_qty
+    
+    for box_num in range(1, num_boxes + 1):
+        if box_num == num_boxes:
+            # 最後一箱：包含所有剩餘數量（尾數）
+            box_qty = remaining_qty
+        else:
+            # 其他箱子：使用容器容量
+            box_qty = container_capacity
+            remaining_qty -= container_capacity
+        
+        # 生成箱號（01, 02, 03...）
+        box_seq = str(box_num).zfill(2)
+        
+        # 生成條碼
+        barcode = BarcodeGenerator.generate(
+            order=order_upper,
+            process=request.current_station_id,
+            sku=sku,
+            container=container_code,
+            box_seq=box_seq,
+            status=request.status,
+            qty=str(box_qty).zfill(4)
+        )
+        
+        if not barcode:
+            raise HTTPException(status_code=500, detail=f"生成第 {box_num} 箱條碼失敗")
+        
+        # 取得 domain 設定，並組合成完整的條碼 URL
+        domain = config_loader.get_value("settings", "Settings", "domain", "")
+        if domain:
+            domain = domain.rstrip('/')
+            new_barcode_with_domain = f"{domain}/b={barcode}"
+        else:
+            new_barcode_with_domain = barcode
+        
+        # 生成 QR Code SVG
+        qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
+        
+        boxes.append({
+            "box_num": box_num,
+            "box_seq": box_seq,
+            "qty": box_qty,
+            "barcode": barcode,
+            "barcode_url": new_barcode_with_domain,
+            "qr_code_svg": qr_svg
+        })
+    
+    # 計算工時
+    cycle_time = 0
+    
+    # 為每個箱子寫入 Google Sheets
+    all_write_success = True
+    for box in boxes:
+        log_data = {
+            "timestamp": datetime.now(),
+            "action": "OUT",
+            "operator": request.operator_id,
+            "order": order_upper,
+            "process": request.current_station_id.upper(),
+            "sku": sku,
+            "container": container_code,
+            "box_seq": box["box_seq"],
+            "qty": str(box["qty"]).zfill(4),
+            "status": request.status,
+            "cycle_time": cycle_time,
+            "scanned_barcode": "",
+            "new_barcode": box["barcode_url"]
+        }
+        
+        write_success = sheet_service.write_log(log_data)
+        if not write_success:
+            all_write_success = False
+            break
+    
+    if not all_write_success:
         # 寫入失敗，返回錯誤，讓前端顯示錯誤訊息並允許重試
         raise HTTPException(
             status_code=500, 
@@ -931,21 +1313,20 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
     # 取得下一站建議
     next_station = get_next_station(request.series_code, request.current_station_id)
     
-    # 生成 QR Code SVG（使用包含 domain 的完整 URL）
-    qr_svg = QRCodeGenerator.generate_simple_svg(new_barcode_with_domain)
-    
     # 寫入成功，回傳成功回應
     return {
         "success": True,
         "message": "首站遷出成功",
         "data": {
-            "barcode": barcode,  # 返回原始條碼（不含 domain）
-            "barcode_url": new_barcode_with_domain,  # 返回完整 URL（含 domain）
+            "total_boxes": num_boxes,
+            "total_qty": total_qty,
+            "container_code": container_code,
+            "container_capacity": container_capacity,
             "order": order_upper,
             "sku": sku,
             "current_station": request.current_station_id.upper(),
             "next_station": next_station.upper() if next_station else None,
-            "qr_code_svg": qr_svg
+            "boxes": boxes  # 所有箱子的資訊
         }
     }
 
