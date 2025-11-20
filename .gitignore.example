@@ -1,0 +1,25 @@
+# 這是 .gitignore 的範例說明
+# 實際的 .gitignore 檔案已經配置好了
+
+# 以下檔案類型會被忽略，不會提交到 GitHub：
+
+# 1. 憑證檔案
+credentials.json
+*.credentials.json
+
+# 2. 環境變數檔案
+.env
+.env.local
+
+# 3. Python 相關
+__pycache__/
+*.pyc
+venv/
+
+# 4. 其他敏感檔案
+secrets.json
+config.local.json
+
+# 注意：.prd_sync_log.json 目前可以提交
+# 因為它不包含敏感資訊，只有同步時間和狀態
+

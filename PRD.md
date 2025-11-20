@@ -229,13 +229,32 @@ fplts_project/
 
 ### 9.1 參考文件
 
-- [待補充]
+- [PRD 同步使用說明](./mcp/PRD_SYNC_README.md) - PRD.md 與 Google Docs 雙向同步功能
 
 ### 9.2 版本歷史
 
 | 版本 | 日期 | 作者 | 說明 |
 |------|------|------|------|
 | 1.0 | YYYY-MM-DD | [作者] | 初始版本 |
+
+### 9.3 PRD.md 與 Google Docs 同步
+
+本文件支援與 Google Docs 雙向同步，確保兩個版本的內容保持一致。
+
+**快速同步指令**：
+```bash
+# 同步到 Google Docs（預設）
+python mcp/sync_prd_gdocs.py
+
+# 從 Google Docs 同步回本地
+python mcp/sync_prd_gdocs.py --from-gdoc
+```
+
+**詳細說明**：請參考 [PRD_SYNC_README.md](./mcp/PRD_SYNC_README.md)
+
+**Google Docs 連結**：
+- 文件 ID: 請在 `.env` 檔案中設定 `GOOGLE_DOC_ID`
+- 連結: 根據您設定的文件 ID 而定
 
 ---
 

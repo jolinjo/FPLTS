@@ -5,8 +5,15 @@
 """
 import subprocess
 import sys
+import os
 import re
+from pathlib import Path
 from collections import defaultdict
+
+# 切換到專案根目錄（腳本位於 scripts/ 目錄下）
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+os.chdir(project_root)
 
 
 def parse_pytest_output(output):

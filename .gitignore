@@ -40,9 +40,28 @@ ENV/
 
 # Google Service Account Credentials
 credentials.json
+*.credentials.json
+*credentials*.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Sensitive configuration files
+config.local.json
+secrets.json
+
+# Sync logs (can be committed, but check for sensitive info)
+# .prd_sync_log.json  # Uncomment if you want to ignore sync logs
+
+# Other JSON files that might contain sensitive info
+# Keep specific JSON files that are safe (like package.json)
 *.json
 !package.json
 !package-lock.json
+!tsconfig.json
+!jsconfig.json
 
 # OS
 .DS_Store

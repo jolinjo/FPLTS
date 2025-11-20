@@ -1,7 +1,8 @@
 #!/bin/bash
 # 啟動腳本 - 自動啟動虛擬環境並運行服務
 
-cd "$(dirname "$0")"
+# 切換到專案根目錄（腳本位於 scripts/ 目錄下）
+cd "$(dirname "$0")/.."
 
 # 檢查虛擬環境是否存在
 if [ ! -d "venv" ]; then
@@ -22,4 +23,5 @@ fi
 echo "正在啟動服務..."
 echo "訪問 http://localhost:8000 查看應用程式"
 python main.py
+
 

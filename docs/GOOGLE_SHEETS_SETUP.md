@@ -60,16 +60,18 @@
    ```json
    {
      "type": "service_account",
-     "project_id": "...",
-     "private_key_id": "...",
-     "private_key": "-----BEGIN PRIVATE KEY-----\n...",
-     "client_email": "...@...iam.gserviceaccount.com",
-     "client_id": "...",
+     "project_id": "your-project-id",
+     "private_key_id": "your-private-key-id",
+     "private_key": "-----BEGIN PRIVATE KEY-----\n[您的私鑰內容]\n-----END PRIVATE KEY-----\n",
+     "client_email": "your-service-account@your-project.iam.gserviceaccount.com",
+     "client_id": "your-client-id",
      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
      "token_uri": "https://oauth2.googleapis.com/token",
      ...
    }
    ```
+   
+   **注意**：這只是範例格式，實際的 `credentials.json` 會包含真實的私鑰和憑證資訊。
 
 ### 步驟 7：分享 Google Sheets 給 Service Account
 
@@ -141,4 +143,5 @@ A: 在 Google Sheets 的「共用」設定中，應該能看到 Service Account 
 - [ ] 已在 Google Sheets 中分享給 Service Account（編輯者權限）
 - [ ] 已在 Google Sheets 中建立名為 "Logs" 的工作表
 - [ ] 已執行測試腳本並通過所有測試
+
 

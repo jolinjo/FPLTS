@@ -5,6 +5,43 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.0.7] - 2025-01-XX
+
+### 新增
+- 完整測試框架：新增 pytest 測試框架和配置
+- 單元測試套件：新增 5 個單元測試文件（條碼、配置、流程驗證、QR Code、Sheets）
+- API 端點測試：新增完整的 API 端點測試，覆蓋所有 API 功能
+- 整合測試：新增完整工作流程整合測試，通過 API 端點模擬前端調用（10 張工單）
+- 中文測試報告：新增中文測試輸出功能，清楚顯示通過/失敗的測試項目
+- 測試目錄結構：重組測試文件到 unit/、api/、integration/ 子目錄
+- 測試文檔：新增完整的測試計劃和說明文檔（TEST_PLAN.md、TESTING.md 等）
+- 測試啟動腳本：新增 run_tests.sh 和 run_tests_cn.py 方便執行測試
+
+### 改進
+- 測試覆蓋率：達到 77% 的測試覆蓋率
+- 測試組織：按類型分類測試文件，結構更清晰
+- 測試文檔集中管理：所有測試相關文檔統一放在 tests/ 目錄
+
+### 修復
+- 修復 QR Code 生成器 bytes 處理問題（img.to_string() 返回 bytes 的處理）
+- 修復配置檔大小寫問題（ConfigParser 將鍵轉為小寫的處理）
+- 修復條碼 CRC16 校驗碼測試問題
+- 修復 API 測試中條碼校驗碼不正確的問題
+
+### 測試
+- 96 個測試用例，涵蓋所有核心功能
+- 單元測試：條碼解析、生成、CRC16 校驗、配置載入、流程驗證等
+- API 測試：所有 API 端點的完整測試
+- 整合測試：完整生產流程測試（通過 API 端點）
+
+### 文檔
+- TEST_PLAN.md：詳細的測試計劃（598 行）
+- TESTING.md：測試程序說明
+- TEST_FIXES.md：測試修復記錄
+- TEST_OUTPUT_CN.md：中文測試輸出說明
+- TEST_STRUCTURE.md：測試目錄結構說明
+- DOCS_INDEX.md：測試文檔索引
+
 ## [0.0.6] - 2025-01-XX
 
 ### 改進
