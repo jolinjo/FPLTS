@@ -5,6 +5,40 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.0.0/)，
 版本號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.2.1] - 2025-01-XX
+
+### 新增
+- **嚴格遵守 Apple Human Interface Guidelines**：
+  - 所有前端頁面設計完全符合 Apple HIG 規範
+  - 在 PRD.md 中新增詳細的 UI/UX 設計規範章節
+  - 包含設計原則、具體設計規範、頁面特定規範和參考資源
+
+### 改進
+- **全面 UI 重構 - Apple 風格設計**：
+  - 使用 iOS 標準顏色系統（系統藍色、綠色、紅色、橙色、紫色等）
+  - 統一字體系統：大標題 28px、標題 22px、正文 17px、小字 15px、標籤 13px
+  - 統一間距系統：使用 8px 基礎單位（8px、16px、24px、32px）
+  - 按鈕樣式：44px 最小觸控目標，10px 圓角，符合 iOS 標準
+  - 卡片樣式：16px 圓角，適當的陰影效果
+  - 輸入框樣式：12px 圓角，44px 最小高度
+  - 優化主頁面佈局：標題大小調整、視覺區劃改善、設定按鈕位置優化
+  - 訊息顯示區域：固定留白空間，位於功能選單上方
+- **功能按鈕優化**：
+  - 使用 iOS 標準顏色（綠色=遷入、藍色=遷出、紫色=追溯、橙色=首站）
+  - 添加 `pointer-events: auto` 和 `user-select: none` 確保可點擊
+  - 優化 hover 和 active 狀態效果
+- **JavaScript 錯誤修復**：
+  - 為所有事件監聽器添加空值檢查，避免 `null` 引用錯誤
+  - 修復 checkbox 事件監聽器缺少空值檢查的問題
+  - 修復下載按鈕事件監聽器缺少空值檢查的問題
+  - 確保所有功能按鈕都能正常運作
+
+### 修復
+- 修復功能按鈕無法點擊的問題
+- 修復 JavaScript 控制台錯誤：`Cannot read properties of null (reading 'addEventListener')`
+- 修復按鈕樣式衝突導致的點擊問題
+- 確保所有 UI 元素都有正確的事件綁定
+
 ## [0.2.0] - 2025-01-XX
 
 ### 新增

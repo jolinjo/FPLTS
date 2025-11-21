@@ -8,56 +8,321 @@
     <title>工廠製程物流追溯系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* iOS 風格自訂樣式 */
+        /* ========== Apple Human Interface Guidelines 規範樣式 ========== */
+        
+        /* 基礎設定 */
         * {
             -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        
+        /* iOS 標準顏色系統 */
+        :root {
+            /* 系統顏色 */
+            --ios-blue: #007AFF;
+            --ios-green: #34C759;
+            --ios-red: #FF3B30;
+            --ios-orange: #FF9500;
+            --ios-purple: #AF52DE;
+            --ios-pink: #FF2D55;
+            --ios-yellow: #FFCC00;
+            
+            /* 背景顏色 */
+            --ios-bg-primary: #FFFFFF;
+            --ios-bg-secondary: #F2F2F7;
+            --ios-bg-tertiary: #FFFFFF;
+            
+            /* 文字顏色 */
+            --ios-text-primary: #000000;
+            --ios-text-secondary: rgba(60, 60, 67, 0.6);
+            --ios-text-tertiary: rgba(60, 60, 67, 0.3);
+            
+            /* 分隔線顏色 */
+            --ios-separator: rgba(60, 60, 67, 0.29);
+            --ios-separator-opaque: #C6C6C8;
+            
+            /* 陰影 */
+            --ios-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --ios-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+            --ios-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(180deg, #f5f5f7 0%, #e8e8ed 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+            background: var(--ios-bg-secondary);
             min-height: 100vh;
             padding-bottom: env(safe-area-inset-bottom);
-        }
-        
-        /* 毛玻璃效果 */
-        .glass {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-        }
-        
-        /* iOS 大型膠囊按鈕 */
-        .btn-capsule {
-            border-radius: 9999px;
-            padding: 16px 32px;
+            color: var(--ios-text-primary);
             font-size: 17px;
+            line-height: 1.47059;
+            letter-spacing: -0.022em;
+        }
+        
+        /* ========== 字體系統（符合 iOS 標準） ========== */
+        h1 {
+            font-size: 28px;
             font-weight: 600;
-            transition: all 0.2s;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            letter-spacing: -0.028em;
+            line-height: 1.10762;
+        }
+        
+        h2 {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.022em;
+            line-height: 1.18182;
+        }
+        
+        h3 {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+        
+        /* 正文：17px */
+        p, .text-body {
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            line-height: 1.47059;
+        }
+        
+        /* 小字：15px */
+        .text-small {
+            font-size: 15px;
+            font-weight: 400;
+            letter-spacing: -0.016em;
+            line-height: 1.33337;
+        }
+        
+        /* 標籤：13px */
+        .text-label {
+            font-size: 13px;
+            font-weight: 400;
+            letter-spacing: -0.008em;
+            line-height: 1.38462;
+        }
+        
+        /* ========== 間距系統（8px 基礎單位） ========== */
+        .spacing-xs { margin: 4px; padding: 4px; }
+        .spacing-sm { margin: 8px; padding: 8px; }
+        .spacing-md { margin: 16px; padding: 16px; }
+        .spacing-lg { margin: 24px; padding: 24px; }
+        .spacing-xl { margin: 32px; padding: 32px; }
+        
+        /* ========== 卡片樣式（16px 圓角） ========== */
+        .glass {
+            background: var(--ios-bg-primary);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 0.5px solid var(--ios-separator);
+        }
+        
+        .card {
+            background: var(--ios-bg-primary);
+            border-radius: 16px;
+            box-shadow: var(--ios-shadow-md);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .card:hover {
+            box-shadow: var(--ios-shadow-lg);
+        }
+        
+        /* ========== 按鈕樣式（44px 觸控目標，10px 圓角） ========== */
+        .btn-primary {
+            background: var(--ios-blue);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        
+        .btn-primary:hover {
+            background: #0051D5;
+        }
+        
+        .btn-primary:active {
+            background: #0040B3;
+            transform: scale(0.98);
+        }
+        
+        .btn-secondary {
+            background: var(--ios-bg-secondary);
+            color: var(--ios-text-primary);
+            border: 0.5px solid var(--ios-separator);
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        
+        .btn-secondary:hover {
+            background: #E5E5EA;
+        }
+        
+        .btn-secondary:active {
+            background: #D1D1D6;
+            transform: scale(0.98);
+        }
+        
+        .btn-text {
+            background: transparent;
+            color: var(--ios-blue);
+            border: none;
+            padding: 8px 16px;
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s;
+            cursor: pointer;
+        }
+        
+        .btn-text:hover {
+            opacity: 0.7;
+        }
+        
+        .btn-text:active {
+            opacity: 0.5;
+        }
+        
+        /* 舊版按鈕兼容 */
+        .btn-capsule {
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            min-height: 44px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .btn-capsule:active {
             transform: scale(0.98);
-            opacity: 0.8;
         }
         
-        /* iOS 卡片 */
-        .card {
-            border-radius: 20px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* iOS 輸入框 */
+        /* ========== 輸入框樣式（12px 圓角） ========== */
         .input-ios {
             border-radius: 12px;
-            padding: 14px 16px;
+            padding: 12px 16px;
             font-size: 17px;
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            background: var(--ios-bg-primary);
+            border: 0.5px solid var(--ios-separator);
+            transition: all 0.2s;
+            min-height: 44px;
         }
         
-        /* iOS 警示視窗 */
+        .input-ios:focus {
+            outline: none;
+            border-color: var(--ios-blue);
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+        }
+        
+        .input-ios::placeholder {
+            color: var(--ios-text-tertiary);
+        }
+        
+        /* ========== 功能卡片（符合 iOS Widget 風格） ========== */
+        .feature-card {
+            background: var(--ios-bg-primary);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: 0.5px solid var(--ios-separator);
+            box-shadow: var(--ios-shadow-sm);
+            position: relative;
+            overflow: hidden;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            pointer-events: auto;
+        }
+        
+        .feature-card:active {
+            transform: scale(0.98);
+            box-shadow: var(--ios-shadow-md);
+        }
+        
+        .feature-card:hover {
+            box-shadow: var(--ios-shadow-md);
+        }
+        
+        .feature-icon-wrapper {
+            margin-bottom: 12px;
+            min-height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .feature-icon-img {
+            width: 56px;
+            height: 56px;
+            display: block;
+            object-fit: contain;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .feature-icon-emoji {
+            font-size: 40px;
+            display: block;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .feature-card:active .feature-icon-img,
+        .feature-card:active .feature-icon-emoji {
+            transform: scale(0.95);
+        }
+        
+        .feature-title {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.022em;
+            margin-bottom: 4px;
+        }
+        
+        .feature-subtitle {
+            font-size: 13px;
+            font-weight: 400;
+            letter-spacing: -0.008em;
+            opacity: 0.6;
+        }
+        
+        /* ========== 警示視窗（iOS 風格） ========== */
         .alert-overlay {
             position: fixed;
             top: 0;
@@ -65,30 +330,28 @@
             right: 0;
             bottom: 0;
             background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: fadeIn 0.2s;
+            animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        /* 處理中動畫 - 增強毛玻璃效果 */
         #processingOverlay {
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            background: rgba(0, 0, 0, 0.5);
         }
         
         .alert-dialog {
-            background: white;
-            border-radius: 20px;
+            background: var(--ios-bg-primary);
+            border-radius: 16px;
             padding: 24px;
             max-width: 320px;
             width: 90%;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            animation: slideUp 0.3s;
+            box-shadow: var(--ios-shadow-lg);
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         @keyframes fadeIn {
@@ -112,14 +375,14 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* 成功卡片動畫 */
+        /* ========== 成功卡片 ========== */
         .success-card {
-            animation: slideIn 0.3s ease-out;
+            animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         @keyframes slideIn {
             from {
-                transform: translateY(-20px);
+                transform: translateY(-10px);
                 opacity: 0;
             }
             to {
@@ -128,7 +391,7 @@
             }
         }
         
-        /* 底部工作表 */
+        /* ========== 底部工作表（iOS 風格） ========== */
         .bottom-sheet-overlay {
             position: fixed;
             top: 0;
@@ -136,12 +399,12 @@
             right: 0;
             bottom: 0;
             background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             z-index: 99;
             opacity: 0;
             visibility: hidden;
-            transition: opacity 0.3s ease-out, visibility 0.3s ease-out;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .bottom-sheet-overlay.open {
@@ -154,12 +417,12 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: white;
-            border-radius: 24px 24px 0 0;
-            box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+            background: var(--ios-bg-primary);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
             z-index: 100;
             transform: translateY(100%);
-            transition: transform 0.3s ease-out;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             max-height: 90vh;
             display: flex;
             flex-direction: column;
@@ -178,24 +441,25 @@
         
         .bottom-sheet-header {
             flex-shrink: 0;
-            padding: 24px 24px 0 24px;
+            padding: 16px 20px 0 20px;
+            border-bottom: 0.5px solid var(--ios-separator);
         }
         
         .bottom-sheet-content {
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            padding: 0 24px 24px 24px;
+            padding: 16px 20px 20px 20px;
         }
         
-        /* 追溯結果頁面 */
+        /* ========== 追溯結果頁面 ========== */
         .trace-page {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: white;
+            background: var(--ios-bg-secondary);
             z-index: 200;
             display: none;
             flex-direction: column;
@@ -207,33 +471,36 @@
         }
         
         .trace-header {
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            background: var(--ios-bg-primary);
+            color: var(--ios-text-primary);
+            padding: 16px 20px;
+            box-shadow: var(--ios-shadow-sm);
+            border-bottom: 0.5px solid var(--ios-separator);
         }
         
         .trace-station-card {
-            background: white;
-            border-radius: 12px;
+            background: var(--ios-bg-primary);
+            border-radius: 16px;
             padding: 16px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            border-left: 4px solid #667eea;
+            box-shadow: var(--ios-shadow-sm);
+            border: 0.5px solid var(--ios-separator);
         }
         
         .trace-station-header {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 600;
-            color: #1f2937;
+            letter-spacing: -0.022em;
+            color: var(--ios-text-primary);
             margin-bottom: 12px;
         }
         
         .trace-info-row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 0.5px solid var(--ios-separator);
         }
         
         .trace-info-row:last-child {
@@ -241,17 +508,20 @@
         }
         
         .trace-info-label {
-            color: #6b7280;
-            font-size: 14px;
+            color: var(--ios-text-secondary);
+            font-size: 15px;
+            font-weight: 400;
+            letter-spacing: -0.016em;
         }
         
         .trace-info-value {
-            color: #1f2937;
-            font-size: 14px;
+            color: var(--ios-text-primary);
+            font-size: 15px;
             font-weight: 500;
+            letter-spacing: -0.016em;
         }
         
-        /* 隱藏滾動條但保持滾動功能 */
+        /* ========== 工具類 ========== */
         .hide-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -259,20 +529,49 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+        
+        /* ========== 響應式設計 ========== */
+        @media (max-width: 768px) {
+            .feature-card {
+                padding: 20px;
+                min-height: 100px;
+            }
+            
+            .feature-icon-wrapper {
+                min-height: 48px;
+            }
+            
+            .feature-icon-img {
+                width: 48px;
+                height: 48px;
+            }
+            
+            .feature-icon-emoji {
+                font-size: 36px;
+            }
+            
+            .feature-title {
+                font-size: 17px;
+            }
+            
+            .feature-subtitle {
+                font-size: 13px;
+            }
+        }
     </style>
 </head>
 <body class="min-h-screen">
     <!-- 設定頁面（強制登入） -->
-    <div id="setupPage" class="min-h-screen flex items-center justify-center p-6 hidden">
+    <div id="setupPage" class="min-h-screen flex items-center justify-center p-6 hidden" style="background: var(--ios-bg-secondary);">
         <div class="w-full max-w-md">
             <div class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-gray-900 mb-2">工廠製程物流追溯系統</h1>
-                <p class="text-gray-600">請先設定您的工號與站點</p>
+                <h1 style="color: var(--ios-text-primary); margin-bottom: 8px;">工廠製程物流追溯系統</h1>
+                <p class="text-small" style="color: var(--ios-text-secondary);">請先設定您的工號與站點</p>
             </div>
             
-            <div class="card glass p-6 mb-6">
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">工號</label>
+            <div class="card glass" style="padding: 24px;">
+                <div style="margin-bottom: 20px;">
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">工號</label>
                     <input 
                         type="text" 
                         id="operatorInput" 
@@ -282,8 +581,8 @@
                     >
                 </div>
                 
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">當前站點</label>
+                <div style="margin-bottom: 24px;">
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">當前站點</label>
                     <select id="stationSelect" class="input-ios w-full">
                         <option value="">請選擇站點</option>
                     </select>
@@ -291,7 +590,7 @@
                 
                 <button 
                     id="saveSetupBtn" 
-                    class="btn-capsule w-full bg-blue-500 text-white"
+                    class="btn-primary w-full"
                 >
                     儲存設定
                 </button>
@@ -300,93 +599,125 @@
     </div>
     
     <!-- 主功能頁面 -->
-    <div id="mainPage" class="min-h-screen p-4 pb-24 hidden">
-        <!-- 頂部資訊列 -->
-        <div class="card glass p-4 mb-4">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-sm text-gray-600">操作員</p>
-                    <p class="text-lg font-semibold text-gray-900" id="operatorDisplay">-</p>
+    <div id="mainPage" class="min-h-screen pb-24 hidden" style="background: var(--ios-bg-secondary);">
+        <!-- 頂部區域 -->
+        <div style="background: var(--ios-bg-primary); border-bottom: 0.5px solid var(--ios-separator);">
+            <div class="max-w-6xl mx-auto" style="padding: 20px 20px 16px 20px;">
+                <!-- 標題區域（含變更設定按鈕） -->
+                <div class="flex items-start justify-between" style="margin-bottom: 16px;">
+                    <div class="flex-1">
+                        <h1 style="color: var(--ios-text-primary); margin-bottom: 4px;">工廠製程物流追溯</h1>
+                        <p class="text-small" style="color: var(--ios-text-secondary);">追蹤每一道工序，確保品質可追溯</p>
+                    </div>
+                    <button 
+                        id="changeSetupBtn" 
+                        class="btn-text"
+                        style="margin-left: 16px; flex-shrink: 0;"
+                    >
+                        設定
+                    </button>
                 </div>
-                <div class="text-right">
-                    <p class="text-sm text-gray-600">當前站點</p>
-                    <p class="text-lg font-semibold text-gray-900" id="stationDisplay">-</p>
+                
+                <!-- 分隔線 -->
+                <div style="border-top: 0.5px solid var(--ios-separator); margin-bottom: 16px;"></div>
+                
+                <!-- 用戶資訊卡片 -->
+                <div class="flex gap-3">
+                    <div class="flex-1 card glass" style="padding: 16px; border-radius: 16px;">
+                        <p class="text-label" style="color: var(--ios-text-secondary); margin-bottom: 4px;">操作員</p>
+                        <p class="text-body" style="font-weight: 600; color: var(--ios-text-primary);" id="operatorDisplay">-</p>
+                    </div>
+                    <div class="flex-1 card glass" style="padding: 16px; border-radius: 16px;">
+                        <p class="text-label" style="color: var(--ios-text-secondary); margin-bottom: 4px;">當前站點</p>
+                        <p class="text-body" style="font-weight: 600; color: var(--ios-text-primary);" id="stationDisplay">-</p>
+                    </div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- 訊息顯示區域（固定空間） -->
+        <div class="max-w-6xl mx-auto" style="padding: 16px 20px; min-height: 80px;">
+            <div id="successCard" class="card glass hidden success-card" style="padding: 16px; background: rgba(52, 199, 89, 0.1); border: 0.5px solid rgba(52, 199, 89, 0.3);">
+                <div class="flex items-center">
+                    <div style="font-size: 24px; margin-right: 12px;">✅</div>
+                    <div class="flex-1">
+                        <p class="text-body" style="font-weight: 600; color: #1D7A3C;" id="successMessage">操作成功</p>
+                        <p class="text-small whitespace-pre-line" style="color: #2D9554; margin-top: 4px;" id="successDetail"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 功能區域 -->
+        <div class="max-w-6xl mx-auto" style="padding: 0 20px 32px 20px;">
+            <h2 class="text-center" style="color: var(--ios-text-primary); margin-bottom: 20px;">功能選單</h2>
+            
+            <!-- 功能卡片網格 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style="gap: 12px;">
                 <button 
-                    id="changeSetupBtn" 
-                    class="text-blue-500 text-sm font-medium"
+                    id="inboundBtn" 
+                    class="feature-card"
+                    style="background: var(--ios-green) !important; color: white; border: none;"
                 >
-                    變更
+                    <div class="feature-icon-wrapper">
+                        <img src="/static/images/icons/inbound.png" alt="貨物遷入" class="feature-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <span class="feature-icon-emoji" style="display: none;">📦</span>
+                    </div>
+                    <div class="feature-title" style="color: white;">貨物遷入</div>
+                    <div class="feature-subtitle" style="color: rgba(255, 255, 255, 0.8);">接收上游站點貨物</div>
+                </button>
+                
+                <button 
+                    id="outboundBtn" 
+                    class="feature-card"
+                    style="background: var(--ios-blue) !important; color: white; border: none;"
+                >
+                    <div class="feature-icon-wrapper">
+                        <img src="/static/images/icons/outbound.png" alt="貨物遷出" class="feature-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <span class="feature-icon-emoji" style="display: none;">🚀</span>
+                    </div>
+                    <div class="feature-title" style="color: white;">貨物遷出</div>
+                    <div class="feature-subtitle" style="color: rgba(255, 255, 255, 0.8);">完成加工後遷出</div>
+                </button>
+                
+                <button 
+                    id="traceBtn" 
+                    class="feature-card"
+                    style="background: var(--ios-purple) !important; color: white; border: none;"
+                >
+                    <div class="feature-icon-wrapper">
+                        <img src="/static/images/icons/trace.png" alt="追溯查詢" class="feature-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <span class="feature-icon-emoji" style="display: none;">🔍</span>
+                    </div>
+                    <div class="feature-title" style="color: white;">追溯查詢</div>
+                    <div class="feature-subtitle" style="color: rgba(255, 255, 255, 0.8);">查詢完整製程記錄</div>
+                </button>
+                
+                <button 
+                    id="firstBtn" 
+                    class="feature-card hidden"
+                    style="background: var(--ios-orange) !important; color: white; border: none;"
+                >
+                    <div class="feature-icon-wrapper">
+                        <img src="/static/images/icons/first.png" alt="首站遷出" class="feature-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <span class="feature-icon-emoji" style="display: none;">✨</span>
+                    </div>
+                    <div class="feature-title" style="color: white;">首站遷出</div>
+                    <div class="feature-subtitle" style="color: rgba(255, 255, 255, 0.8);">新工單首站作業</div>
                 </button>
             </div>
         </div>
-        
-        <!-- 功能按鈕網格 -->
-        <div class="grid grid-cols-2 gap-4 mb-4">
-            <button 
-                id="scanBtn" 
-                class="card glass p-6 text-center btn-capsule bg-indigo-500 text-white col-span-2"
-            >
-                <div class="text-2xl mb-2">📷</div>
-                <div class="font-semibold">掃描條碼（智能識別）</div>
-            </button>
-            
-            <button 
-                id="inboundBtn" 
-                class="card glass p-6 text-center btn-capsule bg-green-500 text-white"
-            >
-                <div class="text-2xl mb-2">📦</div>
-                <div class="font-semibold">貨物遷入</div>
-            </button>
-            
-            <button 
-                id="outboundBtn" 
-                class="card glass p-6 text-center btn-capsule bg-blue-500 text-white"
-            >
-                <div class="text-2xl mb-2">🚀</div>
-                <div class="font-semibold">貨物遷出</div>
-            </button>
-            
-            <button 
-                id="traceBtn" 
-                class="card glass p-6 text-center btn-capsule bg-purple-500 text-white"
-            >
-                <div class="text-2xl mb-2">🔍</div>
-                <div class="font-semibold">追溯查詢</div>
-            </button>
-            
-            <button 
-                id="firstBtn" 
-                class="card glass p-6 text-center btn-capsule bg-orange-500 text-white hidden"
-            >
-                <div class="text-2xl mb-2">✨</div>
-                <div class="font-semibold">首站遷出</div>
-            </button>
-        </div>
-        
-        <!-- 成功訊息卡片 -->
-        <div id="successCard" class="card glass p-4 mb-4 bg-green-50 border-2 border-green-200 hidden success-card">
-            <div class="flex items-center">
-                <div class="text-2xl mr-3">✅</div>
-                <div class="flex-1">
-                    <p class="font-semibold text-green-800" id="successMessage">操作成功</p>
-                    <p class="text-sm text-green-600" id="successDetail"></p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- QR Code 顯示卡片（已改為彈出視窗） -->
     </div>
     
     <!-- 底部工作表（掃描輸入） -->
     <!-- 追溯結果頁面 -->
     <div id="tracePage" class="trace-page">
         <div class="trace-header">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-2xl font-bold" id="traceOrderTitle">追溯查詢</h2>
-                <button id="closeTracePageBtn" class="text-white text-3xl font-light">×</button>
+            <div class="flex items-center justify-between" style="margin-bottom: 12px;">
+                <h2 style="color: var(--ios-text-primary);" id="traceOrderTitle">追溯查詢</h2>
+                <button id="closeTracePageBtn" class="btn-text" style="padding: 8px; min-height: auto; font-size: 24px; line-height: 1; color: var(--ios-text-primary);">×</button>
             </div>
-            <div class="text-sm opacity-90" id="traceSkuInfo"></div>
+            <div class="text-small" style="color: var(--ios-text-secondary);" id="traceSkuInfo"></div>
         </div>
         <div class="flex-1 p-4" id="traceContent">
             <!-- 追溯內容將在這裡動態生成 -->
@@ -399,15 +730,15 @@
     <!-- 底部工作表 -->
     <div id="bottomSheet" class="bottom-sheet">
         <div class="bottom-sheet-header">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xl font-semibold text-gray-900" id="sheetTitle">掃描條碼</h3>
-                <button id="closeSheetBtn" class="text-gray-500 text-2xl hover:text-gray-700">×</button>
+            <div class="flex items-center justify-between" style="padding-bottom: 16px;">
+                <h3 style="color: var(--ios-text-primary);" id="sheetTitle">掃描條碼</h3>
+                <button id="closeSheetBtn" class="btn-text" style="padding: 8px; min-height: auto; font-size: 24px; line-height: 1;">×</button>
             </div>
         </div>
         
         <div class="bottom-sheet-content">
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">條碼</label>
+            <div style="margin-bottom: 20px;">
+                <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">條碼</label>
                 <input 
                     type="text" 
                     id="barcodeInput" 
@@ -419,14 +750,14 @@
             </div>
             
             <!-- 遷入專用欄位：條碼選擇列表 -->
-            <div id="inboundBarcodeSelection" class="hidden mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">選擇要一起遷入的條碼（相同工單）</label>
+            <div id="inboundBarcodeSelection" class="hidden" style="margin-bottom: 20px;">
+                <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">選擇要一起遷入的條碼（相同工單）</label>
                 <!-- 全選/全部取消按鈕 -->
-                <div class="flex gap-2 mb-2">
-                    <button id="selectAllBarcodesBtn" class="btn-capsule flex-1 bg-blue-500 text-white text-sm py-2">
+                <div class="flex gap-2" style="margin-bottom: 12px;">
+                    <button id="selectAllBarcodesBtn" class="btn-primary flex-1" style="font-size: 15px; padding: 10px 16px;">
                         ✓ 全選
                     </button>
-                    <button id="deselectAllBarcodesBtn" class="btn-capsule flex-1 bg-gray-500 text-white text-sm py-2">
+                    <button id="deselectAllBarcodesBtn" class="btn-secondary flex-1" style="font-size: 15px; padding: 10px 16px;">
                         ✗ 全部取消
                     </button>
                 </div>
@@ -438,25 +769,25 @@
             <!-- 遷出專用欄位 -->
             <div id="outboundFields" class="hidden space-y-4">
                 <!-- 投入量顯示區塊 -->
-                <div id="outboundInboundInfo" class="card glass p-4 bg-blue-50 border-2 border-blue-200 hidden">
-                    <div class="flex items-center mb-2">
-                        <span class="text-lg font-semibold text-blue-900">📊 當前站點投入量</span>
+                <div id="outboundInboundInfo" class="card glass hidden" style="padding: 16px; background: rgba(0, 122, 255, 0.1); border: 0.5px solid rgba(0, 122, 255, 0.3); margin-bottom: 16px;">
+                    <div class="flex items-center" style="margin-bottom: 8px;">
+                        <span class="text-body" style="font-weight: 600; color: #003D99;">📊 當前站點投入量</span>
                     </div>
-                    <div class="text-sm text-blue-800">
-                        <p id="outboundInboundQty" class="font-bold text-lg">計算中...</p>
+                    <div class="text-small" style="color: #0051D5;">
+                        <p id="outboundInboundQty" class="text-body" style="font-weight: 600;">計算中...</p>
                     </div>
                 </div>
                 
                 <!-- 良品區塊 -->
-                <div class="card glass p-4 bg-green-50 border-2 border-green-200">
-                    <div class="flex items-center mb-3">
-                        <div class="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
-                        <h3 class="text-lg font-semibold text-gray-800">良品</h3>
+                <div class="card glass" style="padding: 16px; background: rgba(52, 199, 89, 0.1); border: 0.5px solid rgba(52, 199, 89, 0.3); margin-bottom: 16px;">
+                    <div class="flex items-center" style="margin-bottom: 12px;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--ios-green); margin-right: 8px;"></div>
+                        <h3 class="text-body" style="font-weight: 600; color: var(--ios-text-primary);">良品</h3>
                     </div>
                     
-                    <div class="space-y-3">
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">數量</label>
+                            <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">數量</label>
                             <input 
                                 type="text" 
                                 id="goodQtyInput" 
@@ -467,33 +798,33 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">容器</label>
+                            <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">容器</label>
                             <select id="goodContainerSelect" class="input-ios w-full">
                                 <option value="">請選擇容器</option>
                             </select>
                         </div>
                         
                         <!-- 自動計算的箱數預覽 -->
-                        <div id="goodBoxPreview" class="text-sm text-gray-600 hidden">
+                        <div id="goodBoxPreview" class="text-small hidden" style="color: var(--ios-text-secondary);">
                             <div class="flex items-center">
-                                <span class="font-medium">預估箱數：</span>
-                                <span id="goodBoxCount" class="ml-2 font-bold text-green-600">-</span>
-                                <span class="ml-1">箱</span>
+                                <span style="font-weight: 500;">預估箱數：</span>
+                                <span id="goodBoxCount" style="margin-left: 8px; font-weight: 600; color: var(--ios-green);">-</span>
+                                <span style="margin-left: 4px;">箱</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 
                 <!-- 不良品區塊 -->
-                <div class="card glass p-4 bg-red-50 border-2 border-red-200">
-                    <div class="flex items-center mb-3">
-                        <div class="w-3 h-3 rounded-full bg-red-500 mr-2"></div>
-                        <h3 class="text-lg font-semibold text-gray-800">不良品</h3>
+                <div class="card glass" style="padding: 16px; background: rgba(255, 59, 48, 0.1); border: 0.5px solid rgba(255, 59, 48, 0.3); margin-bottom: 16px;">
+                    <div class="flex items-center" style="margin-bottom: 12px;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--ios-red); margin-right: 8px;"></div>
+                        <h3 class="text-body" style="font-weight: 600; color: var(--ios-text-primary);">不良品</h3>
                     </div>
                     
-                    <div class="space-y-3">
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">數量</label>
+                            <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">數量</label>
                             <input 
                                 type="text" 
                                 id="badQtyInput" 
@@ -504,34 +835,34 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">容器</label>
+                            <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">容器</label>
                             <select id="badContainerSelect" class="input-ios w-full">
                                 <option value="">請選擇容器</option>
                             </select>
                         </div>
                         
                         <!-- 自動計算的箱數預覽 -->
-                        <div id="badBoxPreview" class="text-sm text-gray-600 hidden">
+                        <div id="badBoxPreview" class="text-small hidden" style="color: var(--ios-text-secondary);">
                             <div class="flex items-center">
-                                <span class="font-medium">預估箱數：</span>
-                                <span id="badBoxCount" class="ml-2 font-bold text-red-600">-</span>
-                                <span class="ml-1">箱</span>
+                                <span style="font-weight: 500;">預估箱數：</span>
+                                <span id="badBoxCount" style="margin-left: 8px; font-weight: 600; color: var(--ios-red);">-</span>
+                                <span style="margin-left: 4px;">箱</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 
                 <!-- 提示訊息 -->
-                <div class="text-xs text-gray-500 text-center">
+                <div class="text-label text-center" style="color: var(--ios-text-tertiary); margin-top: 16px;">
                     <p>💡 至少需要填寫一組（良品或不良品）</p>
                     <p>系統會自動計算所需箱數並生成條碼</p>
                 </div>
             </div>
             
             <!-- 首站遷出專用欄位 -->
-            <div id="firstFields" class="hidden space-y-4">
+            <div id="firstFields" class="hidden" style="display: flex; flex-direction: column; gap: 16px;">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">工單號</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">工單號</label>
                     <input 
                         type="text" 
                         id="orderInput" 
@@ -543,21 +874,21 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">產品線</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">產品線</label>
                     <select id="seriesSelect" class="input-ios w-full">
                         <option value="">請選擇產品線</option>
                     </select>
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">機種</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">機種</label>
                     <select id="modelSelect" class="input-ios w-full">
                         <option value="">請選擇機種</option>
                     </select>
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">容器</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">容器</label>
                     <select id="firstContainerSelect" class="input-ios w-full">
                         <option value="">請選擇容器</option>
                     </select>
@@ -566,7 +897,7 @@
                 <!-- 箱號已隱藏，由系統自動計算 -->
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">貨態</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">貨態</label>
                     <select id="firstStatusSelect" class="input-ios w-full">
                         <option value="G">G - 良品</option>
                         <option value="N">N - 不良</option>
@@ -577,7 +908,7 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">數量</label>
+                    <label class="text-label" style="display: block; color: var(--ios-text-secondary); margin-bottom: 8px;">數量</label>
                     <input 
                         type="text" 
                         id="firstQtyInput" 
@@ -590,7 +921,8 @@
             
             <button 
                 id="submitBtn" 
-                class="btn-capsule w-full bg-blue-500 text-white mt-4 mb-4"
+                class="btn-primary w-full"
+                style="margin-top: 24px; margin-bottom: 16px;"
             >
                 提交
             </button>
@@ -604,23 +936,23 @@
         <div class="alert-dialog" style="max-width: 95%; max-height: 95vh; width: 95%; overflow-y: auto; padding: 0;">
             <div class="relative bg-white rounded-20" style="min-height: 100%;">
                 <!-- 標題列 -->
-                <div class="sticky top-0 bg-white border-b border-gray-200 p-4 rounded-t-20 z-10">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-xl font-semibold text-gray-900">選擇要一起遷入的條碼（相同工單）</h3>
+                <div class="sticky top-0 z-10" style="background: var(--ios-bg-primary); border-bottom: 0.5px solid var(--ios-separator); padding: 16px; border-radius: 16px 16px 0 0;">
+                    <div class="flex items-center justify-between" style="margin-bottom: 12px;">
+                        <h3 style="color: var(--ios-text-primary);">選擇要一起遷入的條碼（相同工單）</h3>
                         <button 
                             id="closeBarcodeSelectionBtn" 
-                            class="text-gray-500 text-3xl font-light hover:text-gray-700"
-                            style="line-height: 1; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"
+                            class="btn-text"
+                            style="padding: 8px; min-height: auto; font-size: 24px; line-height: 1;"
                         >
                             ×
                         </button>
                     </div>
                     <!-- 全選/全部取消按鈕 -->
-                    <div class="flex gap-2 mt-3 justify-center">
-                        <button id="selectAllBarcodesBtn" class="btn-capsule bg-blue-500 text-white text-sm py-2 px-6">
+                    <div class="flex gap-2 justify-center">
+                        <button id="selectAllBarcodesBtn" class="btn-primary" style="font-size: 15px; padding: 10px 24px;">
                             ✓ 全選
                         </button>
-                        <button id="deselectAllBarcodesBtn" class="btn-capsule bg-gray-500 text-white text-sm py-2 px-6">
+                        <button id="deselectAllBarcodesBtn" class="btn-secondary" style="font-size: 15px; padding: 10px 24px;">
                             ✗ 全部取消
                         </button>
                     </div>
@@ -630,8 +962,8 @@
                     <!-- 條碼選擇項目將在這裡動態生成 -->
                 </div>
                 <!-- 確認按鈕 -->
-                <div class="sticky bottom-0 bg-white border-t border-gray-200 p-4 rounded-b-20">
-                    <button id="confirmInboundBtn" class="btn-capsule w-full bg-blue-500 text-white">
+                <div class="sticky bottom-0" style="background: var(--ios-bg-primary); border-top: 0.5px solid var(--ios-separator); padding: 16px; border-radius: 0 0 20px 20px;">
+                    <button id="confirmInboundBtn" class="btn-primary w-full">
                         確認遷入
                     </button>
                 </div>
@@ -651,8 +983,8 @@
                     ×
                 </button>
                 
-                <div class="text-center mb-4">
-                    <h3 class="text-xl font-semibold text-gray-900 mb-4">條碼 QR Code</h3>
+                <div class="text-center" style="margin-bottom: 16px;">
+                    <h3 style="color: var(--ios-text-primary); margin-bottom: 16px;">條碼 QR Code</h3>
                 </div>
                 
                 <div id="qrcodeContainer">
@@ -679,12 +1011,13 @@
     <div id="alertOverlay" class="alert-overlay hidden">
         <div class="alert-dialog">
             <div class="text-center">
-                <div class="text-4xl mb-4" id="alertIcon">⚠️</div>
-                <h3 class="text-xl font-semibold mb-2" id="alertTitle">錯誤</h3>
-                <p class="text-gray-600 mb-6" id="alertMessage"></p>
+                <div style="font-size: 48px; margin-bottom: 16px;" id="alertIcon">⚠️</div>
+                <h3 style="color: var(--ios-text-primary); margin-bottom: 8px;" id="alertTitle">錯誤</h3>
+                <p class="text-small" style="color: var(--ios-text-secondary); margin-bottom: 24px;" id="alertMessage"></p>
                 <button 
                     id="alertOkBtn" 
-                    class="btn-capsule w-full bg-red-500 text-white"
+                    class="btn-primary w-full"
+                    style="background: var(--ios-red);"
                 >
                     確定
                 </button>

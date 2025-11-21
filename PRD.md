@@ -189,11 +189,80 @@ DEFAULT = P1, P2, P3, P4, P5
 
 **Framework**: Tailwind CSS
 
-**Style**：
+**⚠️ 重要規範：嚴格遵守 Apple Human Interface Guidelines**
+
+所有前端頁面設計必須嚴格遵守 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) 的設計原則，包括但不限於：
+
+### 7.1 設計原則
+
+1. **清晰度 (Clarity)**
+   - 使用清晰的文字和圖標
+   - 避免不必要的裝飾元素
+   - 確保內容易於閱讀和理解
+
+2. **一致性 (Deference)**
+   - 介面元素應與 iOS 原生應用保持一致
+   - 使用標準的 iOS 手勢和互動模式
+   - 保持視覺風格的一致性
+
+3. **深度 (Depth)**
+   - 使用層次結構和動畫來傳達層次感
+   - 適當使用陰影和模糊效果
+   - 透過視覺層次引導使用者注意力
+
+### 7.2 具體設計規範
+
+**Typography（字體）**：
+- 使用系統字體（San Francisco 或類似字體）
+- 字體大小應符合 iOS 標準（最小 17px 用於可點擊元素）
+- 適當的 letter-spacing（負值用於大標題，正值用於小標籤）
+- 使用語義化的字體權重（regular, semibold, bold）
+
+**Color（顏色）**：
+- 使用 iOS 標準顏色系統
+- 主要操作使用藍色（#007AFF 或類似）
+- 成功狀態使用綠色，錯誤狀態使用紅色
+- 確保足夠的對比度以符合無障礙標準
+
+**Spacing（間距）**：
+- 使用一致的間距系統（4px、8px、16px、24px 等）
+- 確保觸控目標至少 44x44 點
+- 適當的留白以提升可讀性
+
+**Buttons（按鈕）**：
+- 主要操作使用填充按鈕
+- 次要操作使用邊框按鈕或文字按鈕
+- 按鈕應有明確的視覺回饋（hover、active 狀態）
+- 使用適當的圓角（通常 8-12px）
+
+**Navigation（導航）**：
+- 使用清晰的導航結構
+- 設定按鈕應放在標題區域的右上角
+- 使用標準的返回和關閉按鈕樣式
+
+**Cards & Containers（卡片與容器）**：
+- 使用適當的圓角（通常 12-18px）
+- 使用微妙的陰影來建立層次感
+- 適當的內邊距（通常 16-24px）
+
+**Feedback（回饋）**：
+- 所有操作都應有視覺或觸覺回饋
+- 使用動畫來傳達狀態變化
+- 錯誤訊息應清晰且可操作
+
+### 7.3 頁面特定規範
+
 - **Setup Page**: iOS Grouped List (輸入工號、選擇站點)
-- **Dashboard**: iOS Widgets (Grid layout)
+- **Dashboard**: iOS Widgets (Grid layout)，清晰的視覺層次
 - **Scan Sheet**: Bottom Sheet，帶有動態顏色回饋
 - **Flow Alert**: 當防呆觸發時，彈出 iOS Style Alert Dialog (震動+紅色)
+- **Trace Page**: 全螢幕頁面，清晰的時間軸視覺化
+
+### 7.4 參考資源
+
+- [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/)
+- [iOS Design Resources](https://developer.apple.com/design/resources/)
+- [SF Symbols](https://developer.apple.com/sf-symbols/)（圖標系統）
 
 ---
 

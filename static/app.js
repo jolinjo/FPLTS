@@ -505,51 +505,83 @@ async function processPendingBarcode() {
  */
 function setupEventListeners() {
     // 設定頁
-    document.getElementById('saveSetupBtn').addEventListener('click', saveSetup);
+    const saveSetupBtn = document.getElementById('saveSetupBtn');
+    if (saveSetupBtn) {
+        saveSetupBtn.addEventListener('click', saveSetup);
+    }
     
     // 主功能頁
-    document.getElementById('changeSetupBtn').addEventListener('click', () => {
+    const changeSetupBtn = document.getElementById('changeSetupBtn');
+    if (changeSetupBtn) {
+        changeSetupBtn.addEventListener('click', () => {
         showSetupPage();
     });
+    }
     
-    // 掃描條碼按鈕（智能識別）
-    document.getElementById('scanBtn').addEventListener('click', () => {
-        openBottomSheet('scan', '掃描條碼');
-    });
-    
-    document.getElementById('inboundBtn').addEventListener('click', () => {
+    const inboundBtn = document.getElementById('inboundBtn');
+    if (inboundBtn) {
+        inboundBtn.addEventListener('click', () => {
         openBottomSheet('inbound', '貨物遷入');
     });
+    }
     
-    document.getElementById('outboundBtn').addEventListener('click', () => {
+    const outboundBtn = document.getElementById('outboundBtn');
+    if (outboundBtn) {
+        outboundBtn.addEventListener('click', () => {
         openBottomSheet('outbound', '貨物遷出');
     });
+    }
     
-    document.getElementById('traceBtn').addEventListener('click', () => {
+    const traceBtn = document.getElementById('traceBtn');
+    if (traceBtn) {
+        traceBtn.addEventListener('click', () => {
         openBottomSheet('trace', '追溯查詢');
     });
+    }
     
-    document.getElementById('firstBtn').addEventListener('click', () => {
+    const firstBtn = document.getElementById('firstBtn');
+    if (firstBtn) {
+        firstBtn.addEventListener('click', () => {
         openBottomSheet('first', '首站遷出');
     });
+    }
     
     // 底部工作表
-    document.getElementById('closeSheetBtn').addEventListener('click', closeBottomSheet);
+    const closeSheetBtn = document.getElementById('closeSheetBtn');
+    if (closeSheetBtn) {
+        closeSheetBtn.addEventListener('click', closeBottomSheet);
+    }
     
     // 背景遮罩點擊關閉
-    document.getElementById('bottomSheetOverlay').addEventListener('click', closeBottomSheet);
+    const bottomSheetOverlay = document.getElementById('bottomSheetOverlay');
+    if (bottomSheetOverlay) {
+        bottomSheetOverlay.addEventListener('click', closeBottomSheet);
+    }
     
     // 阻止底部工作表內部的點擊事件冒泡到遮罩
-    document.getElementById('bottomSheet').addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
+    const bottomSheet = document.getElementById('bottomSheet');
+    if (bottomSheet) {
+        bottomSheet.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
     
     // 追溯結果頁面關閉按鈕
-    document.getElementById('closeTracePageBtn').addEventListener('click', closeTracePage);
-    document.getElementById('submitBtn').addEventListener('click', handleSubmit);
+    const closeTracePageBtn = document.getElementById('closeTracePageBtn');
+    if (closeTracePageBtn) {
+        closeTracePageBtn.addEventListener('click', closeTracePage);
+    }
+    
+    const submitBtn = document.getElementById('submitBtn');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', handleSubmit);
+    }
     
     // 警示視窗
-    document.getElementById('alertOkBtn').addEventListener('click', closeAlert);
+    const alertOkBtn = document.getElementById('alertOkBtn');
+    if (alertOkBtn) {
+        alertOkBtn.addEventListener('click', closeAlert);
+    }
     
     // QR Code 關閉按鈕
     const closeQrcodeBtn = document.getElementById('closeQrcodeBtn');
@@ -2432,7 +2464,10 @@ function showMultiBoxInfo(data) {
         // 移除舊的事件監聽器（如果有的話）
         downloadBtn.replaceWith(downloadBtn.cloneNode(true));
         // 重新綁定事件
-        document.getElementById('downloadAllQRCodesBtn').addEventListener('click', () => downloadAllQRCodes(data));
+        const downloadAllBtn = document.getElementById('downloadAllQRCodesBtn');
+        if (downloadAllBtn) {
+            downloadAllBtn.addEventListener('click', () => downloadAllQRCodes(data));
+        }
     }
     
     // 顯示 QR Code 彈出視窗
@@ -2594,19 +2629,21 @@ function showBarcodeSelection(barcodes, scannedBarcode, onConfirm) {
         
         // 綁定 checkbox 事件
         const checkbox = itemDiv.querySelector('input[type="checkbox"]');
-        checkboxElements.push({ checkbox, itemDiv, barcode: item.barcode });
-        
-        checkbox.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                selectedBarcodes.add(item.barcode);
-                itemDiv.classList.remove('border-gray-200');
-                itemDiv.classList.add('border-blue-500', 'bg-blue-50');
-            } else {
-                selectedBarcodes.delete(item.barcode);
-                itemDiv.classList.remove('border-blue-500', 'bg-blue-50');
-                itemDiv.classList.add('border-gray-200');
-            }
-        });
+        if (checkbox) {
+            checkboxElements.push({ checkbox, itemDiv, barcode: item.barcode });
+            
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    selectedBarcodes.add(item.barcode);
+                    itemDiv.classList.remove('border-gray-200');
+                    itemDiv.classList.add('border-blue-500', 'bg-blue-50');
+                } else {
+                    selectedBarcodes.delete(item.barcode);
+                    itemDiv.classList.remove('border-blue-500', 'bg-blue-50');
+                    itemDiv.classList.add('border-gray-200');
+                }
+            });
+        }
         
         listDiv.appendChild(itemDiv);
     });
