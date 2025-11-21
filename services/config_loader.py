@@ -25,7 +25,6 @@ class ConfigLoader:
             "process.ini",
             "series.ini",
             "model.ini",
-            "flow.ini",
             "container.ini",
             "status.ini",
             "qrcode.ini",

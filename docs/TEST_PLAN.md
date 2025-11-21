@@ -79,31 +79,11 @@
   - process.ini（製程站點）
   - series.ini（產品系列）
   - model.ini（機種）
-  - flow.ini（流程）
   - container.ini（容器）
   - status.ini（貨態）
   - settings.ini（設定）
 
-#### 1.3 流程驗證模組 (`services/flow_validator.py`)
-
-- [ ] **測試流程驗證**
-  - 合法的流程移動應通過驗證（例如：P1 → P2）
-  - 跳站應驗證失敗（例如：P1 → P3）
-  - 漏站應驗證失敗（例如：P2 → P4）
-  - 反向移動應驗證失敗（例如：P2 → P1）
-
-- [ ] **測試不同 SKU 的流程**
-  - AC 系列（不需要烘烤與組裝）：P1 → P3 → P5
-  - ST 系列（全製程）：P1 → P2 → P3 → P4 → P5
-  - MD 系列（不需要烘烤）：P1 → P3 → P4 → P5
-  - 不存在的 SKU 應使用 DEFAULT 流程
-
-- [ ] **測試取得下一站**
-  - `get_next_station()` 應返回正確的下一站
-  - 最後一站應返回 None
-  - 不存在的站點應返回 None
-
-#### 1.4 Google Sheets 服務模組 (`services/sheet.py`)
+#### 1.3 Google Sheets 服務模組 (`services/sheet.py`)
 
 - [ ] **測試記錄寫入**
   - 應成功寫入記錄到 Google Sheets

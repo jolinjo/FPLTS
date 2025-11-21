@@ -631,24 +631,117 @@ class SheetService:
         Returns:
             如果在指定站點有 OUT 記錄則返回 True，否則返回 False
         """
-        # 標準化條碼（移除 domain 前綴）
+        # 標準化條碼（移除 domain 前綴，轉大寫，去除空白）
         barcode_norm = barcode.split("/b=")[-1] if "/b=" in barcode else barcode
+        barcode_norm = barcode_norm.strip().upper()
         station_id_upper = station_id.upper()
         
         # 從緩存讀取
         with self._cache_lock:
             for record in self._cache:
-                scanned = str(record.get("scanned_barcode", "")).strip()
-                scanned_norm = scanned.split("/b=")[-1] if "/b=" in scanned else scanned
+                action = str(record.get("action", "")).strip().upper()
+                process = str(record.get("process", "")).strip().upper()
                 
-                if scanned_norm == barcode_norm:
-                    action = str(record.get("action", "")).strip().upper()
-                    process = str(record.get("process", "")).strip().upper()
+                # 只檢查該站點的 OUT 記錄
+                if action == "OUT" and process == station_id_upper:
+                    # 檢查 scanned_barcode（遷出時掃描的條碼）
+                    scanned = str(record.get("scanned_barcode", "")).strip()
+                    scanned_norm = scanned.split("/b=")[-1] if "/b=" in scanned else scanned
+                    scanned_norm = scanned_norm.strip().upper()
                     
-                    if action == "OUT" and process == station_id_upper:
+                    if scanned_norm == barcode_norm:
+                        print(f"[遷出檢查] 找到匹配：條碼 {barcode_norm} 在站點 {station_id_upper} 有遷出記錄")
                         return True
         
         return False
+    
+    def has_inbound_record_at_other_stations(self, barcode: str, exclude_station_id: str) -> bool:
+        """
+        檢查條碼是否在其他站點（排除指定站點）有遷入（IN）記錄
+        
+        Args:
+            barcode: 條碼字串
+            exclude_station_id: 要排除的站點代號（例如：P1, P2）
+        
+        Returns:
+            如果在其他站點有 IN 記錄則返回 True，否則返回 False
+        """
+        if not self.client or not self.sheet_id:
+            return False
+        
+        try:
+            # 標準化條碼（移除 domain 前綴）
+            barcode_norm = barcode.split("/b=")[-1] if "/b=" in barcode else barcode
+            exclude_station_upper = exclude_station_id.upper()
+            
+            # 從緩存中查找
+            with self._cache_lock:
+                for record in self._cache:
+                    scanned_barcode = str(record.get("scanned_barcode", "")).strip()
+                    action = str(record.get("action", "")).upper()
+                    process = str(record.get("process", "")).upper()
+                    
+                    if (scanned_barcode == barcode_norm and 
+                        action == "IN" and 
+                        process != exclude_station_upper):
+                        return True
+            
+            # 如果緩存中沒找到，從 Google Sheets 查詢
+            spreadsheet = self.client.open_by_key(self.sheet_id)
+            worksheet = spreadsheet.worksheet("Logs")
+            
+            # 讀取標題列
+            try:
+                headers = worksheet.row_values(1)
+                if not headers or len(headers) == 0:
+                    return False
+            except:
+                return False
+            
+            # 找到 scanned_barcode、process 和 action 欄位的位置
+            scanned_barcode_col = None
+            process_col = None
+            action_col = None
+            
+            for i, header in enumerate(headers):
+                if "(" in header:
+                    column_name = header.split("(")[0].strip()
+                else:
+                    column_name = header.strip()
+                
+                if column_name == "scanned_barcode":
+                    scanned_barcode_col = i + 1
+                elif column_name == "process":
+                    process_col = i + 1
+                elif column_name == "action":
+                    action_col = i + 1
+            
+            if not scanned_barcode_col or not process_col or not action_col:
+                return False
+            
+            # 使用 findall 查詢條碼
+            cells = worksheet.findall(barcode_norm)
+            for cell in cells:
+                row = cell.row
+                # 檢查是否在 scanned_barcode 欄位
+                if cell.col != scanned_barcode_col:
+                    continue
+                
+                # 讀取該行的 action 和 process 欄位
+                action_value = worksheet.cell(row, action_col).value
+                process_value = worksheet.cell(row, process_col).value
+                
+                action = str(action_value).upper() if action_value else ""
+                process = str(process_value).upper() if process_value else ""
+                
+                if action == "IN" and process != exclude_station_upper:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"檢查其他站點遷入記錄失敗：{e}")
+            return False
     
     def has_inbound_record_at_station(self, barcode: str, station_id: str) -> bool:
         """
@@ -1100,6 +1193,90 @@ class SheetService:
                 unique_logs.append(log)
         
         return unique_logs
+    
+    def get_inbound_barcodes_at_station(self, station_id: str) -> list:
+        """
+        查詢指定站點的所有遷入條碼（IN 記錄），但只返回尚未遷出的條碼
+        即：有 IN 記錄但沒有 OUT 記錄（在該站點）的條碼
+        
+        Args:
+            station_id: 站點代號（例如：P1, P2）
+        
+        Returns:
+            遷入條碼列表（只包含尚未遷出的），每個條碼包含：barcode, order, sku, qty, timestamp, container, box_seq, status
+        """
+        if not self.client or not self.sheet_id:
+            return []
+        
+        try:
+            station_id_upper = station_id.upper()
+            inbound_barcodes = []
+            
+            # 從緩存讀取
+            with self._cache_lock:
+                # 先收集所有該站點的 IN 記錄和 OUT 記錄
+                inbound_records = []
+                outbound_barcodes = set()
+                
+                for record in self._cache:
+                    action = str(record.get("action", "")).upper()
+                    process = str(record.get("process", "")).upper()
+                    
+                    # 收集該站點的 IN 記錄
+                    if action == "IN" and process == station_id_upper:
+                        scanned_barcode = str(record.get("scanned_barcode", "")).strip()
+                        if scanned_barcode:
+                            inbound_records.append(record)
+                    
+                    # 收集該站點的 OUT 記錄的條碼（用於過濾）
+                    if action == "OUT" and process == station_id_upper:
+                        scanned_barcode = str(record.get("scanned_barcode", "")).strip()
+                        if scanned_barcode:
+                            # 標準化條碼
+                            out_barcode_norm = scanned_barcode
+                            if "/b=" in scanned_barcode:
+                                out_barcode_norm = scanned_barcode.split("/b=")[-1]
+                            out_barcode_norm = out_barcode_norm.strip().upper()
+                            outbound_barcodes.add(out_barcode_norm)
+                
+                # 處理 IN 記錄，過濾掉已有 OUT 記錄的條碼
+                seen_barcodes = set()
+                for record in inbound_records:
+                    scanned_barcode = str(record.get("scanned_barcode", "")).strip()
+                    # 標準化條碼（移除可能的 domain 前綴，轉大寫，去除空白）
+                    barcode_normalized = scanned_barcode
+                    if "/b=" in scanned_barcode:
+                        barcode_normalized = scanned_barcode.split("/b=")[-1]
+                    barcode_normalized = barcode_normalized.strip().upper()
+                    
+                    # 去重
+                    if barcode_normalized not in seen_barcodes:
+                        seen_barcodes.add(barcode_normalized)
+                        
+                        # 檢查該條碼是否在 OUT 記錄中
+                        if barcode_normalized not in outbound_barcodes:
+                            # 沒有 OUT 記錄，加入列表
+                            inbound_barcodes.append({
+                                "barcode": barcode_normalized,
+                                "order": str(record.get("order", "")).strip(),
+                                "sku": str(record.get("sku", "")).strip(),
+                                "qty": str(record.get("qty", "")).strip(),
+                                "timestamp": str(record.get("timestamp", "")).strip(),
+                                "container": str(record.get("container", "")).strip(),
+                                "box_seq": str(record.get("box_seq", "")).strip(),
+                                "status": str(record.get("status", "")).strip()
+                            })
+                        else:
+                            print(f"[遷入條碼列表] 條碼 {barcode_normalized} 在站點 {station_id_upper} 已有遷出記錄，跳過")
+            
+            # 按時間戳記排序（由早到晚）
+            inbound_barcodes.sort(key=lambda x: x.get("timestamp", ""), reverse=False)
+            
+            return inbound_barcodes
+            
+        except Exception as e:
+            print(f"查詢站點遷入條碼失敗：{e}")
+            return []
 
 
 # 全域單例實例

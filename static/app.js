@@ -52,6 +52,9 @@ function showSetupPage() {
     document.getElementById('setupPage').classList.remove('hidden');
     document.getElementById('mainPage').classList.add('hidden');
     
+    // 停止主頁面遷入條碼自動更新
+    stopMainPageInboundBarcodesUpdate();
+    
     // 確保下拉選單已更新（如果選項已載入）
     // 使用 setTimeout 確保 DOM 元素已經可見
     setTimeout(() => {
@@ -82,11 +85,176 @@ function showMainPage() {
     document.getElementById('mainPage').classList.remove('hidden');
     
     // 更新顯示資訊
-    document.getElementById('operatorDisplay').textContent = AppState.operatorId;
+    const operatorDisplay = document.getElementById('operatorDisplay');
+    if (operatorDisplay) {
+        operatorDisplay.textContent = AppState.operatorId || '-';
+    }
+    updateStationDisplay();
+    
+    // 檢查操作員是否已設定
+    if (!AppState.operatorId || !/^\d{7}$/.test(AppState.operatorId)) {
+        // 沒有有效的操作員，禁用所有功能並顯示提示
+        disableAllFunctions();
+        showMainPageMessage('請先登入操作員（工號必須為7位數字）', 'warning');
+        return;
+    }
+    
+    // 有有效的操作員，啟用所有功能
+    enableAllFunctions();
+    
+    // 根據當前站點顯示/隱藏首站遷出按鈕
+    updateFirstStationButtonVisibility();
+    
+    // 更新遷入條碼列表
+    updateMainPageInboundBarcodes();
+    
+    // 啟動自動更新定時器
+    startMainPageInboundBarcodesUpdate();
+}
+
+/**
+ * 打開設定底部工作表（從站點卡片點擊時使用）
+ */
+function openSetupBottomSheet() {
+    const overlay = document.getElementById('bottomSheetOverlay');
+    const setupSheet = document.getElementById('setupBottomSheet');
+    
+    if (!overlay || !setupSheet) {
+        console.error('找不到設定底部工作表元素');
+        return;
+    }
+    
+    // 更新單選按鈕列表
+    updateStationRadioGroup();
+    
+    // 顯示遮罩和底部工作表
+    overlay.classList.add('open');
+    setupSheet.classList.add('open');
+}
+
+/**
+ * 關閉設定底部工作表
+ */
+function closeSetupBottomSheet() {
+    const overlay = document.getElementById('bottomSheetOverlay');
+    const setupSheet = document.getElementById('setupBottomSheet');
+    
+    if (overlay) {
+        overlay.classList.remove('open');
+    }
+    if (setupSheet) {
+        setupSheet.classList.remove('open');
+    }
+}
+
+/**
+ * 更新站點單選按鈕列表
+ */
+function updateStationRadioGroup() {
+    const radioGroup = document.getElementById('stationRadioGroup');
+    if (!radioGroup) {
+        console.error('找不到站點單選按鈕組元素');
+        return;
+    }
+    
+    // 檢查是否有選項數據
+    if (!AppState.processOptions || AppState.processOptions.length === 0) {
+        radioGroup.innerHTML = '<p class="text-small" style="color: var(--ios-text-secondary); padding: 16px;">載入中...</p>';
+        return;
+    }
+    
+    // 清空現有內容
+    radioGroup.innerHTML = '';
+    
+    // 獲取當前選中的站點
+    const currentStation = localStorage.getItem('currentStationId') || AppState.currentStationId || '';
+    
+    // 過濾掉 ZZ 製程（新工單），不顯示在選單中
+    AppState.processOptions
+        .filter(process => process.code.toUpperCase() !== 'ZZ')
+        .forEach(process => {
+            const radioOption = document.createElement('div');
+            radioOption.className = 'radio-option';
+            
+            const radioId = `stationRadio_${process.code}`;
+            const isChecked = process.code === currentStation;
+            
+            const codeUpper = process.code.toUpperCase();
+            const nameUpper = process.name.toUpperCase();
+            
+            radioOption.innerHTML = `
+                <input 
+                    type="radio" 
+                    id="${radioId}" 
+                    name="stationRadio" 
+                    value="${process.code}"
+                    ${isChecked ? 'checked' : ''}
+                >
+                <label for="${radioId}">${codeUpper} - ${nameUpper}</label>
+            `;
+            
+            // 為整個選項區域添加點擊事件，確保點擊任何地方都能切換
+            radioOption.addEventListener('click', (e) => {
+                // 如果點擊的不是 radio 按鈕本身，則觸發 radio 按鈕的點擊
+                if (e.target.tagName !== 'INPUT') {
+                    const radioInput = radioOption.querySelector('input[type="radio"]');
+                    if (radioInput && !radioInput.checked) {
+                        radioInput.checked = true;
+                        radioInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            });
+            
+            // 為單選按鈕添加 change 事件監聽器，選中後立即保存
+            const radioInput = radioOption.querySelector('input[type="radio"]');
+            if (radioInput) {
+                radioInput.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        saveStationSelection(e.target.value);
+                    }
+                });
+            }
+            
+            radioGroup.appendChild(radioOption);
+        });
+    
+    if (radioGroup.children.length === 0) {
+        radioGroup.innerHTML = '<p class="text-small" style="color: var(--ios-text-secondary); padding: 16px;">暫無可用站點</p>';
+    }
+}
+
+/**
+ * 保存站點選擇（立即生效）
+ */
+function saveStationSelection(currentStationId) {
+    if (!currentStationId) {
+        return;
+    }
+    
+    // 儲存到 localStorage
+    localStorage.setItem('currentStationId', currentStationId);
+    
+    // 更新應用狀態
+    AppState.currentStationId = currentStationId;
+    
+    // 更新顯示資訊
     updateStationDisplay();
     
     // 根據當前站點顯示/隱藏首站遷出按鈕
     updateFirstStationButtonVisibility();
+    
+    // 更新遷入條碼列表
+    updateMainPageInboundBarcodes();
+    
+    // 關閉底部工作表
+    closeSetupBottomSheet();
+    
+    // 顯示成功訊息（包含站點中文名稱，統一轉換為大寫顯示）
+    const process = AppState.processOptions.find(p => p.code === currentStationId);
+    const stationCodeUpper = currentStationId ? currentStationId.toUpperCase() : '';
+    const nameUpper = process ? process.name.toUpperCase() : '';
+    const stationDisplay = process ? `${stationCodeUpper} - ${nameUpper}` : stationCodeUpper;
+    showSuccess('站點已更新', `當前站點：${stationDisplay}`);
 }
 
 /**
@@ -94,19 +262,27 @@ function showMainPage() {
  */
 function updateStationDisplay() {
     const stationDisplay = document.getElementById('stationDisplay');
-    if (!stationDisplay || !AppState.currentStationId) {
+    const stationDisplayCenter = document.getElementById('stationDisplayCenter');
+    
+    if (!AppState.currentStationId) {
         return;
     }
     
     // 查找對應的站點名稱（統一轉換為大寫顯示）
     const process = AppState.processOptions.find(p => p.code === AppState.currentStationId);
     const stationCodeUpper = AppState.currentStationId ? AppState.currentStationId.toUpperCase() : '';
-    if (process) {
-        const nameUpper = process.name.toUpperCase();
-        stationDisplay.textContent = `${stationCodeUpper} - ${nameUpper}`;
-    } else {
-        // 如果找不到，只顯示代號
-        stationDisplay.textContent = stationCodeUpper;
+    const displayText = process 
+        ? `${stationCodeUpper} - ${process.name.toUpperCase()}`
+        : stationCodeUpper;
+    
+    // 更新頂部卡片中的站點顯示
+    if (stationDisplay) {
+        stationDisplay.textContent = displayText;
+    }
+    
+    // 更新中間的站點顯示
+    if (stationDisplayCenter) {
+        stationDisplayCenter.textContent = displayText;
     }
 }
 
@@ -511,39 +687,106 @@ function setupEventListeners() {
     }
     
     // 主功能頁
-    const changeSetupBtn = document.getElementById('changeSetupBtn');
-    if (changeSetupBtn) {
-        changeSetupBtn.addEventListener('click', () => {
-        showSetupPage();
-    });
+    // 站點卡片點擊進入設定（使用底部工作表）
+    const stationCard = document.getElementById('stationCard');
+    if (stationCard) {
+        stationCard.addEventListener('click', () => {
+            openSetupBottomSheet();
+        });
+    }
+    
+    // 關閉設定底部工作表按鈕
+    const closeSetupSheetBtn = document.getElementById('closeSetupSheetBtn');
+    if (closeSetupSheetBtn) {
+        closeSetupSheetBtn.addEventListener('click', closeSetupBottomSheet);
+    }
+    
+    // 操作者卡片點擊進入設定（使用底部工作表）
+    const operatorCard = document.getElementById('operatorCard');
+    if (operatorCard) {
+        operatorCard.addEventListener('click', () => {
+            openOperatorBottomSheet();
+        });
+    }
+    
+    // 關閉操作者設定底部工作表按鈕
+    const closeOperatorSheetBtn = document.getElementById('closeOperatorSheetBtn');
+    if (closeOperatorSheetBtn) {
+        closeOperatorSheetBtn.addEventListener('click', closeOperatorBottomSheet);
+    }
+    
+    // 操作者設定底部工作表儲存按鈕
+    const saveOperatorBtn = document.getElementById('saveOperatorBtn');
+    if (saveOperatorBtn) {
+        saveOperatorBtn.addEventListener('click', saveOperatorSetup);
+    }
+    
+    // 操作者設定底部工作表工號輸入自動轉大寫
+    const operatorInputBottom = document.getElementById('operatorInputBottom');
+    if (operatorInputBottom) {
+        operatorInputBottom.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
+        });
     }
     
     const inboundBtn = document.getElementById('inboundBtn');
     if (inboundBtn) {
         inboundBtn.addEventListener('click', () => {
-        openBottomSheet('inbound', '貨物遷入');
-    });
+            // 如果按鈕被禁用，不執行操作
+            if (inboundBtn.disabled) {
+                return;
+            }
+            // 檢查操作員是否已登入
+            if (!checkOperatorLogin()) {
+                return;
+            }
+            openBottomSheet('inbound', '貨物遷入');
+        });
     }
     
     const outboundBtn = document.getElementById('outboundBtn');
     if (outboundBtn) {
         outboundBtn.addEventListener('click', () => {
-        openBottomSheet('outbound', '貨物遷出');
-    });
+            // 如果按鈕被禁用，不執行操作
+            if (outboundBtn.disabled) {
+                return;
+            }
+            // 檢查操作員是否已登入
+            if (!checkOperatorLogin()) {
+                return;
+            }
+            openBottomSheet('outbound', '貨物遷出');
+        });
     }
     
     const traceBtn = document.getElementById('traceBtn');
     if (traceBtn) {
         traceBtn.addEventListener('click', () => {
-        openBottomSheet('trace', '追溯查詢');
-    });
+            // 如果按鈕被禁用，不執行操作
+            if (traceBtn.disabled) {
+                return;
+            }
+            // 檢查操作員是否已登入
+            if (!checkOperatorLogin()) {
+                return;
+            }
+            openBottomSheet('trace', '追溯查詢');
+        });
     }
     
     const firstBtn = document.getElementById('firstBtn');
     if (firstBtn) {
         firstBtn.addEventListener('click', () => {
-        openBottomSheet('first', '首站遷出');
-    });
+            // 如果按鈕被禁用，不執行操作
+            if (firstBtn.disabled) {
+                return;
+            }
+            // 檢查操作員是否已登入
+            if (!checkOperatorLogin()) {
+                return;
+            }
+            openBottomSheet('first', '首站遷出');
+        });
     }
     
     // 底部工作表
@@ -552,10 +795,22 @@ function setupEventListeners() {
         closeSheetBtn.addEventListener('click', closeBottomSheet);
     }
     
-    // 背景遮罩點擊關閉
+    // 背景遮罩點擊關閉（處理所有底部工作表）
     const bottomSheetOverlay = document.getElementById('bottomSheetOverlay');
     if (bottomSheetOverlay) {
-        bottomSheetOverlay.addEventListener('click', closeBottomSheet);
+        bottomSheetOverlay.addEventListener('click', (e) => {
+            // 檢查是否有設定工作表打開
+            const setupSheet = document.getElementById('setupBottomSheet');
+            const operatorSheet = document.getElementById('operatorBottomSheet');
+            if (setupSheet && setupSheet.classList.contains('open')) {
+                closeSetupBottomSheet();
+            } else if (operatorSheet && operatorSheet.classList.contains('open')) {
+                closeOperatorBottomSheet();
+            } else {
+                // 否則關閉其他底部工作表
+                closeBottomSheet();
+            }
+        });
     }
     
     // 阻止底部工作表內部的點擊事件冒泡到遮罩
@@ -654,7 +909,7 @@ function setupEventListeners() {
 }
 
 /**
- * 儲存設定
+ * 儲存設定（從全屏設定頁面）
  */
 function saveSetup() {
     const operatorId = document.getElementById('operatorInput').value.trim();
@@ -693,12 +948,183 @@ function saveSetup() {
 }
 
 /**
- * 根據當前站點更新首站遷出按鈕的顯示/隱藏
- * 只有 P1 站才顯示首站遷出功能
+ * 打開操作者設定底部工作表
+ */
+function openOperatorBottomSheet() {
+    const overlay = document.getElementById('bottomSheetOverlay');
+    const operatorSheet = document.getElementById('operatorBottomSheet');
+    
+    if (!overlay || !operatorSheet) {
+        console.error('找不到操作者設定底部工作表元素');
+        return;
+    }
+    
+    // 載入已儲存的值
+    const savedOperator = localStorage.getItem('operatorId');
+    const operatorInput = document.getElementById('operatorInputBottom');
+    if (operatorInput) {
+        operatorInput.value = savedOperator || '';
+    }
+    
+    // 顯示遮罩和底部工作表
+    overlay.classList.add('open');
+    operatorSheet.classList.add('open');
+}
+
+/**
+ * 關閉操作者設定底部工作表
+ */
+function closeOperatorBottomSheet() {
+    const overlay = document.getElementById('bottomSheetOverlay');
+    const operatorSheet = document.getElementById('operatorBottomSheet');
+    
+    if (overlay) {
+        overlay.classList.remove('open');
+    }
+    if (operatorSheet) {
+        operatorSheet.classList.remove('open');
+    }
+}
+
+/**
+ * 儲存操作者設定
+ */
+function saveOperatorSetup() {
+    const operatorInput = document.getElementById('operatorInputBottom');
+    const operatorId = operatorInput ? operatorInput.value.trim() : '';
+    
+    if (!operatorId) {
+        showAlert('錯誤', '請輸入工號', 'error');
+        return;
+    }
+    
+    // 驗證工號必須為7位數字
+    if (!/^\d{7}$/.test(operatorId)) {
+        showAlert('錯誤', '工號必須為7位數字（例如：1810002）', 'error');
+        return;
+    }
+    
+    // 儲存到 localStorage
+    localStorage.setItem('operatorId', operatorId);
+    
+    // 更新應用狀態
+    AppState.operatorId = operatorId;
+    
+    // 更新顯示資訊
+    const operatorDisplay = document.getElementById('operatorDisplay');
+    if (operatorDisplay) {
+        operatorDisplay.textContent = operatorId;
+    }
+    
+    // 啟用所有功能
+    enableAllFunctions();
+    
+    // 關閉底部工作表
+    closeOperatorBottomSheet();
+    
+    // 顯示成功訊息
+    showSuccess('設定已儲存', `操作員：${operatorId}`);
+}
+
+/**
+ * 禁用所有功能按鈕（當沒有操作員時）
+ */
+function disableAllFunctions() {
+    const inboundBtn = document.getElementById('inboundBtn');
+    const outboundBtn = document.getElementById('outboundBtn');
+    const firstBtn = document.getElementById('firstBtn');
+    const traceBtn = document.getElementById('traceBtn');
+    
+    if (inboundBtn) {
+        inboundBtn.disabled = true;
+        inboundBtn.style.opacity = '0.5';
+        inboundBtn.style.cursor = 'not-allowed';
+        inboundBtn.style.pointerEvents = 'none';
+        inboundBtn.onmouseover = null;
+        inboundBtn.onmouseout = null;
+    }
+    if (outboundBtn) {
+        outboundBtn.disabled = true;
+        outboundBtn.style.opacity = '0.5';
+        outboundBtn.style.cursor = 'not-allowed';
+        outboundBtn.style.pointerEvents = 'none';
+        outboundBtn.onmouseover = null;
+        outboundBtn.onmouseout = null;
+    }
+    if (firstBtn) {
+        firstBtn.disabled = true;
+        firstBtn.style.opacity = '0.5';
+        firstBtn.style.cursor = 'not-allowed';
+        firstBtn.style.pointerEvents = 'none';
+        firstBtn.onmouseover = null;
+        firstBtn.onmouseout = null;
+    }
+    if (traceBtn) {
+        traceBtn.disabled = true;
+        traceBtn.style.opacity = '0.5';
+        traceBtn.style.cursor = 'not-allowed';
+        traceBtn.style.pointerEvents = 'none';
+    }
+}
+
+/**
+ * 啟用所有功能按鈕（當有操作員時）
+ */
+function enableAllFunctions() {
+    const inboundBtn = document.getElementById('inboundBtn');
+    const outboundBtn = document.getElementById('outboundBtn');
+    const firstBtn = document.getElementById('firstBtn');
+    const traceBtn = document.getElementById('traceBtn');
+    
+    if (inboundBtn) {
+        inboundBtn.disabled = false;
+        inboundBtn.style.opacity = '1';
+        inboundBtn.style.cursor = 'pointer';
+        inboundBtn.style.pointerEvents = 'auto';
+    }
+    if (outboundBtn) {
+        outboundBtn.disabled = false;
+        outboundBtn.style.opacity = '1';
+        outboundBtn.style.cursor = 'pointer';
+        outboundBtn.style.pointerEvents = 'auto';
+    }
+    if (firstBtn) {
+        firstBtn.disabled = false;
+        firstBtn.style.opacity = '1';
+        firstBtn.style.cursor = 'pointer';
+        firstBtn.style.pointerEvents = 'auto';
+    }
+    if (traceBtn) {
+        traceBtn.disabled = false;
+        traceBtn.style.opacity = '1';
+        traceBtn.style.cursor = 'pointer';
+        traceBtn.style.pointerEvents = 'auto';
+    }
+}
+
+/**
+ * 檢查操作員是否已登入
+ */
+function checkOperatorLogin() {
+    if (!AppState.operatorId || !/^\d{7}$/.test(AppState.operatorId)) {
+        showMainPageMessage('請先登入操作員（工號必須為7位數字）', 'warning');
+        return false;
+    }
+    return true;
+}
+
+/**
+ * 根據當前站點更新首站遷出和貨物遷出按鈕的顯示/隱藏
+ * 只有 P1 站才顯示首站遷出功能，其他站點顯示貨物遷出
+ * 兩個按鈕同時只會出現一種
+ * P1 站點時，遷入按鈕會被禁用（不隱藏）
  */
 function updateFirstStationButtonVisibility() {
     const firstBtn = document.getElementById('firstBtn');
-    if (!firstBtn) {
+    const outboundBtn = document.getElementById('outboundBtn');
+    const inboundBtn = document.getElementById('inboundBtn');
+    
+    if (!firstBtn || !outboundBtn || !inboundBtn) {
         return;
     }
     
@@ -706,11 +1132,21 @@ function updateFirstStationButtonVisibility() {
     const isP1 = AppState.currentStationId && AppState.currentStationId.toUpperCase() === 'P1';
     
     if (isP1) {
-        // P1 站：顯示首站遷出按鈕
-        firstBtn.classList.remove('hidden');
+        // P1 站：顯示首站遷出按鈕，隱藏貨物遷出按鈕
+        firstBtn.style.display = 'flex';
+        outboundBtn.style.display = 'none';
+        // P1 站：禁用遷入按鈕（不隱藏）
+        inboundBtn.disabled = true;
+        inboundBtn.style.opacity = '0.5';
+        inboundBtn.style.cursor = 'not-allowed';
     } else {
-        // 其他站點：隱藏首站遷出按鈕
-        firstBtn.classList.add('hidden');
+        // 其他站點：隱藏首站遷出按鈕，顯示貨物遷出按鈕
+        firstBtn.style.display = 'none';
+        outboundBtn.style.display = 'flex';
+        // 其他站點：啟用遷入按鈕
+        inboundBtn.disabled = false;
+        inboundBtn.style.opacity = '1';
+        inboundBtn.style.cursor = 'pointer';
     }
 }
 
@@ -2180,6 +2616,334 @@ function showTracePage(traceData) {
     
     // 顯示頁面
     tracePage.classList.add('open');
+    
+    // 啟動當前站點遷入條碼的自動更新（每30秒）
+    startTraceInboundBarcodesUpdate();
+}
+
+// 追溯頁面自動更新定時器
+let traceInboundBarcodesUpdateInterval = null;
+
+/**
+ * 啟動追溯頁面當前站點遷入條碼的自動更新
+ */
+function startTraceInboundBarcodesUpdate() {
+    // 清除舊的定時器
+    if (traceInboundBarcodesUpdateInterval) {
+        clearInterval(traceInboundBarcodesUpdateInterval);
+    }
+    
+    // 立即更新一次
+    updateTraceInboundBarcodes();
+    
+    // 每30秒更新一次
+    traceInboundBarcodesUpdateInterval = setInterval(() => {
+        updateTraceInboundBarcodes();
+    }, 30000);
+}
+
+/**
+ * 停止追溯頁面當前站點遷入條碼的自動更新
+ */
+function stopTraceInboundBarcodesUpdate() {
+    if (traceInboundBarcodesUpdateInterval) {
+        clearInterval(traceInboundBarcodesUpdateInterval);
+        traceInboundBarcodesUpdateInterval = null;
+    }
+}
+
+/**
+ * 更新追溯頁面當前站點的遷入條碼列表
+ */
+async function updateTraceInboundBarcodes() {
+    if (!AppState.currentStationId) {
+        return;
+    }
+    
+    const section = document.getElementById('traceInboundBarcodesSection');
+    const list = document.getElementById('traceInboundBarcodesList');
+    const updateTime = document.getElementById('traceInboundBarcodesUpdateTime');
+    
+    if (!section || !list) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/scan/current-station-inbound-barcodes?station_id=${AppState.currentStationId}`);
+        if (!response.ok) {
+            throw new Error('獲取遷入條碼失敗');
+        }
+        
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || '獲取遷入條碼失敗');
+        }
+        
+        const barcodes = data.data || [];
+        
+        // 更新時間戳記
+        if (updateTime) {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            updateTime.textContent = `更新於 ${timeStr}`;
+        }
+        
+        // 清空列表
+        list.innerHTML = '';
+        
+        if (barcodes.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'text-small text-center';
+            emptyItem.style.color = 'var(--ios-text-tertiary)';
+            emptyItem.style.padding = '16px';
+            emptyItem.textContent = '目前沒有遷入條碼';
+            list.appendChild(emptyItem);
+        } else {
+            // 顯示條碼列表
+            barcodes.forEach((item, index) => {
+                const barcodeItem = document.createElement('div');
+                barcodeItem.className = 'card glass';
+                barcodeItem.style.padding = '12px';
+                barcodeItem.style.borderRadius = '12px';
+                barcodeItem.style.border = '0.5px solid var(--ios-separator)';
+                barcodeItem.style.marginBottom = index < barcodes.length - 1 ? '8px' : '0';
+                
+                barcodeItem.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <p class="text-small" style="color: var(--ios-text-primary); font-weight: 500; margin-bottom: 4px;">${item.barcode || '-'}</p>
+                            <div class="flex gap-4 text-label" style="color: var(--ios-text-secondary);">
+                                <span>工單：${item.order || '-'}</span>
+                                <span>數量：${item.qty || '0'}</span>
+                                <span>容器：${item.container || '-'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                list.appendChild(barcodeItem);
+            });
+        }
+        
+        // 顯示區塊
+        section.style.display = 'block';
+        
+    } catch (error) {
+        console.error('更新遷入條碼列表失敗：', error);
+        // 錯誤時不顯示區塊
+        if (section) {
+            section.style.display = 'none';
+        }
+    }
+}
+
+/**
+ * 更新主頁面當前站點的遷入條碼列表
+ */
+async function updateMainPageInboundBarcodes() {
+    console.log('[updateMainPageInboundBarcodes] 開始執行，當前站點：', AppState.currentStationId);
+    
+    if (!AppState.currentStationId) {
+        console.warn('[updateMainPageInboundBarcodes] 當前站點為空，跳過更新');
+        return;
+    }
+    
+    const list = document.getElementById('inboundBarcodesList');
+    const updateTime = document.getElementById('inboundBarcodesUpdateTime');
+    
+    if (!list) {
+        console.error('[updateMainPageInboundBarcodes] 找不到 inboundBarcodesList 元素');
+        return;
+    }
+    
+    try {
+        console.log('[updateMainPageInboundBarcodes] 發送 API 請求，站點：', AppState.currentStationId);
+        const response = await fetch(`/api/scan/current-station-inbound-barcodes?station_id=${AppState.currentStationId}`);
+        if (!response.ok) {
+            throw new Error(`獲取遷入條碼失敗：${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('[updateMainPageInboundBarcodes] API 響應：', data);
+        
+        if (!data.success) {
+            throw new Error(data.message || '獲取遷入條碼失敗');
+        }
+        
+        const barcodes = data.data || [];
+        console.log('[updateMainPageInboundBarcodes] 獲取到條碼數量：', barcodes.length);
+        
+        // 更新時間戳記
+        if (updateTime) {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            updateTime.textContent = `更新於 ${timeStr}`;
+        }
+        
+        // 清空列表
+        list.innerHTML = '';
+        
+        if (barcodes.length === 0) {
+            console.log('[updateMainPageInboundBarcodes] 沒有遷入條碼，顯示空狀態');
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'text-small text-center';
+            emptyItem.style.color = 'var(--ios-text-tertiary)';
+            emptyItem.style.padding = '16px';
+            emptyItem.textContent = '目前沒有遷入條碼';
+            list.appendChild(emptyItem);
+        } else {
+            console.log('[updateMainPageInboundBarcodes] 開始渲染條碼列表，共', barcodes.length, '個條碼');
+            // 顯示條碼列表
+            barcodes.forEach((item, index) => {
+                const barcodeItem = document.createElement('div');
+                barcodeItem.className = 'card glass';
+                barcodeItem.style.padding = '16px';
+                barcodeItem.style.borderRadius = '12px';
+                barcodeItem.style.border = '0.5px solid var(--ios-separator)';
+                barcodeItem.style.marginBottom = index < barcodes.length - 1 ? '8px' : '0';
+                
+                // 從 SKU 提取產品線和型號（SKU 格式：前2碼為產品線，後3碼為型號）
+                let seriesCode = '';
+                let seriesName = '';
+                let modelCode = '';
+                let modelName = '';
+                
+                if (item.sku && item.sku.length >= 5) {
+                    seriesCode = item.sku.substring(0, 2).toUpperCase();
+                    modelCode = item.sku.substring(2, 5).toUpperCase();
+                    
+                    // 從 INI 設定查找產品線名稱
+                    if (AppState.seriesOptions && AppState.seriesOptions.length > 0) {
+                        const seriesOption = AppState.seriesOptions.find(s => s.code.toUpperCase() === seriesCode);
+                        if (seriesOption) {
+                            seriesName = seriesOption.name || '';
+                        }
+                    }
+                    
+                    // 從 INI 設定查找型號名稱
+                    if (AppState.modelOptions && AppState.modelOptions.length > 0) {
+                        const modelOption = AppState.modelOptions.find(m => m.code.toUpperCase() === modelCode);
+                        if (modelOption) {
+                            modelName = modelOption.name || '';
+                        }
+                    }
+                }
+                
+                // 查找容器名稱（從 INI 設定）
+                let containerName = item.container || '-';
+                if (item.container && AppState.containerOptions && AppState.containerOptions.length > 0) {
+                    const containerOption = AppState.containerOptions.find(c => c.code.toUpperCase() === item.container.toUpperCase());
+                    if (containerOption) {
+                        const codeUpper = containerOption.code.toUpperCase();
+                        const displayText = containerOption.name || (containerOption.capacity > 0 ? `容量 ${containerOption.capacity}` : '自訂');
+                        containerName = `${codeUpper} - ${displayText}`;
+                    } else {
+                        containerName = item.container.toUpperCase();
+                    }
+                }
+                
+                // 構建型號顯示文字
+                let modelDisplay = '';
+                if (modelCode && modelName) {
+                    modelDisplay = `${modelCode} - ${modelName}`;
+                } else if (modelCode) {
+                    modelDisplay = modelCode;
+                } else if (item.sku) {
+                    modelDisplay = `SKU: ${item.sku.toUpperCase()}`;
+                }
+                
+                // 格式化遷入時間
+                let timeDisplay = '-';
+                if (item.timestamp) {
+                    try {
+                        // 嘗試解析時間戳記（可能是 ISO 格式或自定義格式）
+                        const timestamp = item.timestamp;
+                        // 如果是 ISO 格式，提取日期和時間部分
+                        if (timestamp.includes('T')) {
+                            const datePart = timestamp.split('T')[0];
+                            const timePart = timestamp.split('T')[1].split('.')[0];
+                            timeDisplay = `${datePart} ${timePart}`;
+                        } else if (timestamp.includes(' ')) {
+                            // 已經是 "YYYY-MM-DD HH:MM:SS" 格式
+                            timeDisplay = timestamp;
+                        } else {
+                            timeDisplay = timestamp;
+                        }
+                    } catch (e) {
+                        timeDisplay = item.timestamp;
+                    }
+                }
+                
+                barcodeItem.innerHTML = `
+                    <div style="display: flex; width: 100%; gap: 16px;">
+                        <div class="flex-1">
+                            <!-- 第一行：型號和數量 -->
+                            <div class="flex gap-6 items-center" style="margin-bottom: 8px;">
+                                <div class="flex-1">
+                                    <p class="text-label" style="color: var(--ios-text-secondary); margin-bottom: 2px;">型號</p>
+                                    <p class="text-body" style="color: var(--ios-text-primary); font-weight: 600; font-size: 17px;">${modelDisplay || '-'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-label" style="color: var(--ios-text-secondary); margin-bottom: 2px;">數量</p>
+                                    <p class="text-body" style="color: var(--ios-text-primary); font-weight: 600; font-size: 17px;">${item.qty || '0'}</p>
+                                </div>
+                            </div>
+                            <!-- 第二行：工單和容器 -->
+                            <p class="text-label" style="color: var(--ios-text-secondary); font-size: 13px; margin-top: 4px;">
+                                工單：${item.order || '-'} | 容器：${containerName}
+                            </p>
+                        </div>
+                        <!-- 右側：時間和條碼 -->
+                        <div style="text-align: right; min-width: 140px;">
+                            <p class="text-label" style="color: var(--ios-text-secondary); margin-bottom: 2px;">遷入時間</p>
+                            <p class="text-body" style="color: var(--ios-text-primary); font-weight: 600; font-size: 17px; margin-bottom: 8px;">${timeDisplay}</p>
+                            <p class="text-label" style="color: var(--ios-text-tertiary); font-size: 11px; word-break: break-all;">${item.barcode || '-'}</p>
+                        </div>
+                    </div>
+                `;
+                
+                list.appendChild(barcodeItem);
+            });
+            console.log('[updateMainPageInboundBarcodes] 條碼列表渲染完成');
+        }
+        
+    } catch (error) {
+        console.error('[updateMainPageInboundBarcodes] 更新遷入條碼列表失敗：', error);
+        if (list) {
+            list.innerHTML = '<p class="text-small text-center" style="color: var(--ios-text-tertiary); padding: 16px;">載入失敗：' + error.message + '</p>';
+        }
+    }
+}
+
+// 主頁面遷入條碼自動更新定時器
+let mainPageInboundBarcodesUpdateInterval = null;
+
+/**
+ * 啟動主頁面遷入條碼的自動更新（每30秒）
+ */
+function startMainPageInboundBarcodesUpdate() {
+    // 清除舊的定時器
+    if (mainPageInboundBarcodesUpdateInterval) {
+        clearInterval(mainPageInboundBarcodesUpdateInterval);
+    }
+    
+    // 立即更新一次
+    updateMainPageInboundBarcodes();
+    
+    // 每30秒更新一次
+    mainPageInboundBarcodesUpdateInterval = setInterval(() => {
+        updateMainPageInboundBarcodes();
+    }, 30000);
+}
+
+/**
+ * 停止主頁面遷入條碼的自動更新
+ */
+function stopMainPageInboundBarcodesUpdate() {
+    if (mainPageInboundBarcodesUpdateInterval) {
+        clearInterval(mainPageInboundBarcodesUpdateInterval);
+        mainPageInboundBarcodesUpdateInterval = null;
+    }
 }
 
 /**
@@ -2187,6 +2951,8 @@ function showTracePage(traceData) {
  */
 function closeTracePage() {
     document.getElementById('tracePage').classList.remove('open');
+    // 停止自動更新
+    stopTraceInboundBarcodesUpdate();
 }
 
 /**
@@ -2333,14 +3099,78 @@ function hideProcessing() {
 
 function showSuccess(message, detail) {
     const card = document.getElementById('successCard');
+    const warningCard = document.getElementById('warningCard');
+    // 隱藏警告卡片
+    if (warningCard) {
+        warningCard.classList.add('hidden');
+        warningCard.style.transform = 'translateY(-100%)';
+        warningCard.style.opacity = '0';
+    }
     document.getElementById('successMessage').textContent = message;
     document.getElementById('successDetail').textContent = detail;
+    
+    // 移除 hidden class
     card.classList.remove('hidden');
     
-    // 3 秒後自動隱藏
+    // 觸發動畫：從頂部滑入
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            card.style.transform = 'translateY(0)';
+            card.style.opacity = '1';
+        });
+    });
+    
+    // 3 秒後自動隱藏（帶動畫）
     setTimeout(() => {
-        card.classList.add('hidden');
+        card.style.transform = 'translateY(-100%)';
+        card.style.opacity = '0';
+        setTimeout(() => {
+            card.classList.add('hidden');
+        }, 300); // 等待動畫完成
     }, 3000);
+}
+
+/**
+ * 在主頁面訊息區域顯示訊息
+ */
+function showMainPageMessage(message, type = 'warning') {
+    const successCard = document.getElementById('successCard');
+    const warningCard = document.getElementById('warningCard');
+    
+    // 隱藏成功卡片（帶動畫）
+    if (successCard) {
+        successCard.style.transform = 'translateY(-100%)';
+        successCard.style.opacity = '0';
+        setTimeout(() => {
+            successCard.classList.add('hidden');
+        }, 300);
+    }
+    
+    if (type === 'warning' && warningCard) {
+        document.getElementById('warningMessage').textContent = message;
+        // 移除 hidden class
+        warningCard.classList.remove('hidden');
+        // 觸發動畫：從頂部滑入
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                warningCard.style.transform = 'translateY(0)';
+                warningCard.style.opacity = '1';
+            });
+        });
+    } else if (successCard) {
+        // 如果沒有警告卡片，使用成功卡片顯示
+        document.getElementById('successMessage').textContent = message;
+        document.getElementById('successDetail').textContent = '';
+        // 移除 hidden class
+        successCard.classList.remove('hidden');
+        // 觸發動畫：從頂部滑入
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                successCard.style.transform = 'translateY(0)';
+                successCard.style.opacity = '1';
+            });
+        });
+    }
 }
 
 /**

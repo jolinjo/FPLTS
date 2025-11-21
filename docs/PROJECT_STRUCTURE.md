@@ -6,9 +6,8 @@
 FactoryProcessLogistics&Traceability System/
 ├── config/              # 設定檔目錄
 │   ├── container.ini     # 容器與容量定義
-│   ├── flow.ini          # 製程流防呆定義
 │   ├── model.ini         # 產品機型定義
-│   ├── process.ini       # 製程站點定義
+│   ├── process.ini        # 製程站點定義
 │   ├── qrcode.ini        # QR Code 設定
 │   ├── series.ini        # 產品系列定義
 │   ├── settings.ini      # 系統設定
@@ -41,7 +40,6 @@ FactoryProcessLogistics&Traceability System/
 │   ├── __init__.py
 │   ├── barcode.py                 # 條碼解析、生成、CRC校驗
 │   ├── config_loader.py           # INI 讀取器
-│   ├── flow_validator.py          # 防呆驗證邏輯
 │   ├── qrcode_generator.py        # QR Code 生成器
 │   └── sheet.py                   # Google Sheets 讀寫操作
 │
@@ -57,7 +55,6 @@ FactoryProcessLogistics&Traceability System/
 │   ├── unit/                      # 單元測試
 │   │   ├── test_barcode.py
 │   │   ├── test_config_loader.py
-│   │   ├── test_flow_validator.py
 │   │   ├── test_qrcode_generator.py
 │   │   └── test_sheet.py
 │   ├── integration/               # 整合測試
@@ -95,7 +92,6 @@ FactoryProcessLogistics&Traceability System/
 包含所有 INI 格式的設定檔，用於定義：
 - 製程站點
 - 產品系列和機型
-- 製程流程
 - 容器和貨態
 - 系統設定
 
@@ -123,7 +119,6 @@ FactoryProcessLogistics&Traceability System/
 
 包含系統的核心業務邏輯：
 - 條碼處理
-- 流程驗證
 - Google Sheets 操作
 - QR Code 生成
 

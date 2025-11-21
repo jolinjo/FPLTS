@@ -11,7 +11,6 @@ import os
 from dotenv import load_dotenv
 
 from services.barcode import BarcodeParser, BarcodeGenerator, CRC16
-from services.flow_validator import validate_process_flow, get_next_station
 from services.sheet import sheet_service
 from services.config_loader import config_loader
 from services.qrcode_generator import QRCodeGenerator
@@ -126,6 +125,30 @@ async def get_previous_station_barcodes_api(order: str, current_station_id: str)
     }
 
 
+@app.get("/api/scan/current-station-inbound-barcodes")
+async def get_current_station_inbound_barcodes_api(station_id: str):
+    """
+    查詢當前站點的所有遷入條碼（IN 記錄）
+    
+    用於在追溯查詢頁面顯示當前站點的遷入條碼列表
+    
+    Args:
+        station_id: 站點代號（例如：P1, P2）
+    
+    Returns:
+        當前站點的遷入條碼列表
+    """
+    if not station_id:
+        raise HTTPException(status_code=400, detail="站點代號不能為空")
+    
+    barcodes = sheet_service.get_inbound_barcodes_at_station(station_id)
+    
+    return {
+        "success": True,
+        "data": barcodes
+    }
+
+
 @app.post("/api/scan/check")
 async def check_barcode(request: CheckBarcodeRequest):
     """
@@ -179,32 +202,50 @@ async def check_barcode(request: CheckBarcodeRequest):
     current_station = request.current_station_id.upper()
     barcode_process = process_code.upper()
     
-    # ========== 根據 BARCODE_SCAN_LOGIC.md 定義的邏輯 ==========
-    # 優先級順序：
-    # 1. ZZ 製程 → 首站遷出（已在上面處理）
-    # 2. 上一站條碼 + 當前站點或下游站點已有遷出記錄 → 只允許查詢（防止數據錯亂）
-    # 3. 當前站點已有遷入記錄 → 遷出
-    # 4. 當前站點已有遷出記錄 → 遷出
-    # 5. 沒有記錄 → 遷入（根據條碼與站點關係）
-    
+    # ========== 簡化邏輯：只判斷是不是當站的條碼 ==========
     # 判斷條碼與當前站點的關係（上一站/本站/下一站）
     station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
     barcode_order = station_order.get(barcode_process, 999)
     current_order = station_order.get(current_station, 999)
     
-    # ========== 第二優先級：上一站條碼 + 當前站點或下游站點已有遷出記錄 ==========
-    # 防止數據錯亂：如果條碼已經流到下游，不能再遷入或遷出
-    if barcode_order < current_order:
-        # 這是上一站條碼
+    # ========== 情況 1：本站條碼 ==========
+    if barcode_order == current_order:
+        # 本站條碼：根據進出記錄判斷是遷出還是遷入
+        has_in_at_current = sheet_service.has_inbound_record_at_station(request.barcode, current_station)
         has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, current_station)
-        has_out_at_downstream = sheet_service.has_outbound_record_at_downstream_stations(request.barcode, current_station)
         
-        if has_out_at_current or has_out_at_downstream:
-            # 當前站點或下游站點已有遷出記錄 → 只允許查詢
+        if has_in_at_current:
+            # 有遷入記錄 → 遷出
+            return {
+                "success": True,
+                "suggested_action": "outbound",
+                "message": f"該條碼在 {current_station} 站點已有遷入記錄，請使用遷出功能",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
+        elif has_out_at_current:
+            # 有遷出記錄 → 可以再次遷出
+            return {
+                "success": True,
+                "suggested_action": "outbound",
+                "message": f"該條碼在 {current_station} 站點已有遷出記錄，可以再次遷出",
+                "data": {
+                    "barcode": request.barcode,
+                    "order": parsed['order'].upper(),
+                    "process": process_code,
+                    "sku": parsed['sku']
+                }
+            }
+        else:
+            # 沒有記錄 → 查詢（本站條碼但沒有記錄，可能是異常情況）
             return {
                 "success": True,
                 "suggested_action": "trace",
-                "message": f"該條碼在當前站點或下游站點已有遷出記錄，為避免數據錯亂，只能進行查詢",
+                "message": f"檢測到 {barcode_process} 製程條碼（本站），但沒有記錄，只能進行查詢",
                 "data": {
                     "barcode": request.barcode,
                     "order": parsed['order'].upper(),
@@ -213,65 +254,16 @@ async def check_barcode(request: CheckBarcodeRequest):
                 }
             }
     
-    # ========== 特殊處理：本站條碼（無論是否有記錄，都只允許查詢）==========
-    if barcode_order == current_order:
-        # 本站條碼 → 只允許查詢（不能在本站掃到本站條碼時進行遷入或遷出）
+    # ========== 情況 2：非本站條碼 ==========
+    # 檢查是否在其他站有遷入記錄
+    has_in_at_other_stations = sheet_service.has_inbound_record_at_other_stations(request.barcode, current_station)
+    
+    if has_in_at_other_stations:
+        # 在其他站有遷入記錄 → 只允許查詢
         return {
             "success": True,
             "suggested_action": "trace",
-            "message": f"檢測到 {barcode_process} 製程條碼（本站），只能進行查詢",
-            "data": {
-                "barcode": request.barcode,
-                "order": parsed['order'].upper(),
-                "process": process_code,
-                "sku": parsed['sku']
-            }
-        }
-    
-    # ========== 第三優先級：檢查當前站點是否有遷入記錄 ==========
-    print(f"[check_barcode] 檢查條碼 {request.barcode} 在站點 {current_station} 是否有遷入記錄...")
-    has_in_at_current = sheet_service.has_inbound_record_at_station(request.barcode, current_station)
-    print(f"[check_barcode] 遷入記錄檢查結果：{has_in_at_current}")
-    
-    if has_in_at_current:
-        # 當前站點已有遷入記錄 → 必須先遷出
-        print(f"[check_barcode] 返回建議操作：outbound（已有遷入記錄）")
-        return {
-            "success": True,
-            "suggested_action": "outbound",
-            "message": f"該條碼在 {current_station} 站點已有遷入記錄，請使用遷出功能",
-            "data": {
-                "barcode": request.barcode,
-                "order": parsed['order'].upper(),
-                "process": process_code,
-                "sku": parsed['sku']
-            }
-        }
-    
-    # ========== 第四優先級：檢查當前站點是否有遷出記錄 ==========
-    has_out_at_current = sheet_service.has_outbound_record_at_station(request.barcode, current_station)
-    
-    if has_out_at_current:
-        # 當前站點已有遷出記錄 → 可以再次遷出（例如：分為良品和不良品）
-        return {
-            "success": True,
-            "suggested_action": "outbound",
-            "message": f"該條碼在 {current_station} 站點已有遷出記錄，可以再次遷出",
-            "data": {
-                "barcode": request.barcode,
-                "order": parsed['order'].upper(),
-                "process": process_code,
-                "sku": parsed['sku']
-            }
-        }
-    
-    # ========== 最低優先級：沒有記錄 → 根據條碼與站點關係決定 ==========
-    if barcode_order < current_order:
-        # 上一站條碼 → 建議遷入（正常流程）
-        return {
-            "success": True,
-            "suggested_action": "inbound",
-            "message": f"檢測到 {barcode_process} 製程條碼（上一站），在 {current_station} 站點沒有記錄，建議使用遷入功能",
+            "message": f"該條碼在其他站點已有遷入記錄，只能進行查詢",
             "data": {
                 "barcode": request.barcode,
                 "order": parsed['order'].upper(),
@@ -280,11 +272,11 @@ async def check_barcode(request: CheckBarcodeRequest):
             }
         }
     else:
-        # 下一站條碼 → 只允許查詢（不能掃到下一站條碼時進行遷入，可能是異常情況）
+        # 沒有其他站遷入記錄 → 可以遷入
         return {
             "success": True,
-            "suggested_action": "trace",
-            "message": f"檢測到 {barcode_process} 製程條碼（下一站），在 {current_station} 站點沒有記錄，只能進行查詢",
+            "suggested_action": "inbound",
+            "message": f"檢測到 {barcode_process} 製程條碼，在 {current_station} 站點沒有記錄，可以使用遷入功能",
             "data": {
                 "barcode": request.barcode,
                 "order": parsed['order'].upper(),
@@ -524,15 +516,7 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
             }
         }
     
-    # 取得產品系列（前2碼）
-    series = BarcodeParser.get_series_from_sku(sku)
-    
-    # 優先進行流程驗證（防呆檢查）
-    is_valid, error_message = validate_process_flow(series, prev_station, curr_station)
-    
-    if not is_valid:
-        # 驗證失敗，直接回傳 HTTP 400 錯誤
-        raise HTTPException(status_code=400, detail=error_message)
+    # 移除流程驗證（已放棄流程控制）
     
     # 計算工時（遷入時工時為 0）
     cycle_time = 0
@@ -574,27 +558,10 @@ async def scan_inbound(request: InboundRequest, background_tasks: BackgroundTask
             failed_barcodes.append(barcode_to_process)
             continue
         
-        # 取得該條碼的 SKU 和上一站（用於流程驗證）
+        # 取得該條碼的 SKU
         barcode_sku = parsed_barcode['sku']
-        barcode_prev_station = parsed_barcode['process']
         
-        # 流程驗證（只對第一個條碼或主要條碼進行驗證，其他條碼假設已經驗證過）
-        if barcode_to_process == request.barcode:
-            # 主要條碼：進行完整驗證
-            series = BarcodeParser.get_series_from_sku(barcode_sku)
-            is_valid, error_message = validate_process_flow(series, barcode_prev_station, curr_station)
-            if not is_valid:
-                failed_barcodes.append(barcode_to_process)
-                continue
-        else:
-            # 其他條碼：簡單驗證（確保是上一站條碼）
-            station_order = {'P1': 1, 'P2': 2, 'P3': 3, 'P4': 4, 'P5': 5}
-            barcode_order = station_order.get(barcode_prev_station.upper(), 999)
-            current_order = station_order.get(curr_station.upper(), 999)
-            if barcode_order >= current_order:
-                # 不是上一站條碼，跳過
-                failed_barcodes.append(barcode_to_process)
-                continue
+        # 移除流程驗證（已放棄流程控制）
         
         # 準備記錄資料（工單號和站點轉換為大寫）
         log_data = {
@@ -851,10 +818,6 @@ async def scan_outbound(request: OutboundRequest):
                 detail=f"寫入 Google Sheets 失敗（成功 {success_count}/{len(all_logs)} 筆），請檢查網路連線或 Google Sheets 設定，稍後再試"
             )
     
-    # 取得下一站建議
-    series = BarcodeParser.get_series_from_sku(parsed['sku'])
-    next_station = get_next_station(series, request.current_station_id)
-    
     # 寫入成功，回傳成功回應
     return {
         "success": True,
@@ -866,7 +829,6 @@ async def scan_outbound(request: OutboundRequest):
             "bad_boxes": len(bad_boxes),
             "order": parsed['order'].upper(),
             "current_station": request.current_station_id.upper(),
-            "next_station": next_station.upper() if next_station else None,
             "boxes": all_boxes  # 所有箱子的資訊（良品 + 不良品）
         }
     }
@@ -1310,9 +1272,6 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
             detail="寫入 Google Sheets 失敗，請檢查網路連線或 Google Sheets 設定，稍後再試"
         )
     
-    # 取得下一站建議
-    next_station = get_next_station(request.series_code, request.current_station_id)
-    
     # 寫入成功，回傳成功回應
     return {
         "success": True,
@@ -1325,7 +1284,6 @@ async def scan_first(request: FirstStationRequest, background_tasks: BackgroundT
             "order": order_upper,
             "sku": sku,
             "current_station": request.current_station_id.upper(),
-            "next_station": next_station.upper() if next_station else None,
             "boxes": boxes  # 所有箱子的資訊
         }
     }
